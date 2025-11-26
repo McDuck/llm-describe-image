@@ -1,1 +1,3 @@
-python -m pip install lmstudio
+python -m pip install \
+    lmstudio \
+    python-dotenv

@@ -38,8 +38,7 @@ llmed_count = 0
 skipped_count = 0
 failed_count = 0
 processed_count = 0
-# Directory traversal stats
-dirs_total = 0
+# Directory traversal stats (best-effort, no pre-count to avoid blocking)
 dirs_scanned = 0
 last_action_lock = threading.Lock()
 last_action = "initializing"
@@ -271,7 +270,7 @@ def llm_worker(model, prompt):
 
 # --- MAIN ---
 def main():
-    global discovered_count, to_download_count, skipped_count, INPUT_DIR, OUTPUT_DIR, llm_queue_semaphore, dirs_total, dirs_scanned
+    global discovered_count, to_download_count, skipped_count, INPUT_DIR, OUTPUT_DIR, llm_queue_semaphore, dirs_scanned
 
     # Parse CLI options
     parser = argparse.ArgumentParser()
@@ -325,12 +324,7 @@ def main():
     def status_printer(interval: float):
         while not stop_event.is_set():
             la = get_last_action()
-            # Append directory traversal progress if known
-            if dirs_total > 0:
-                remaining = max(0, dirs_total - dirs_scanned)
-                print_status(f"Status - {la} | Dirs: {dirs_scanned}/{dirs_total} (remaining {remaining})", force=True)
-            else:
-                print_status(f"Status - {la}", force=True)
+            print_status(f"Status - {la} | Dirs: {dirs_scanned}", force=True)
             time.sleep(interval)
 
     status_thread = threading.Thread(target=status_printer, args=(status_interval,), daemon=True)
@@ -529,14 +523,9 @@ def main():
 
     try:
         # --- DISCOVERY ---
-        # Pre-count total directories for status (best effort): count each walk iteration (each directory root)
-        try:
-            dirs_total = 0
-            for _root, _dirs, _files in os.walk(INPUT_DIR):
-                dirs_total += 1
-        except Exception:
-            dirs_total = 0
-        
+        # Start discovery immediately; do not pre-count directories to avoid blocking
+        stop_discovery = False
+        printed_limit_warning = False
         for root, dirs, files in os.walk(INPUT_DIR):
             # Track how many directories have been scanned
             dirs_scanned += 1
@@ -561,8 +550,11 @@ def main():
 
                 # Safety limit to prevent runaway discovery
                 if to_download_count >= MAX_DISCOVERY:
-                    print(f"\nWarning: Hit discovery limit of {MAX_DISCOVERY} files. Stopping discovery.")
-                    print(f"Increase MAX_DISCOVERY in .env if you need to process more files.")
+                    if not printed_limit_warning:
+                        print(f"\nWarning: Hit discovery limit of {MAX_DISCOVERY} files. Stopping discovery.")
+                        print(f"Increase MAX_DISCOVERY in .env if you need to process more files.")
+                        printed_limit_warning = True
+                    stop_discovery = True
                     break
 
                 to_download_count += 1
@@ -570,6 +562,9 @@ def main():
                 rel = os.path.relpath(input_path, INPUT_DIR)
                 set_last_action(f"discovered file {rel}")
                 print_status(f"Discovered {rel}.")
+
+            if stop_discovery:
+                break
 
         # Wait for queues to finish
         while (not download_queue.empty() or not llm_queue.empty() or

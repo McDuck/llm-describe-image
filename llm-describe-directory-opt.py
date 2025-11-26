@@ -8,6 +8,7 @@ import time
 import subprocess
 import shutil
 import argparse
+import re
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -529,6 +530,11 @@ def main():
         for root, dirs, files in os.walk(INPUT_DIR):
             # Track how many directories have been scanned
             dirs_scanned += 1
+            # Natural descending sort of directories and files
+            def _natural_key(s: str):
+                return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', s)]
+            dirs[:] = sorted(dirs, key=_natural_key, reverse=True)
+            files = sorted(files, key=_natural_key, reverse=True)
             for file in files:
                 if stop_event.is_set():
                     break

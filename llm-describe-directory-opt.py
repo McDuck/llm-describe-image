@@ -1,4 +1,4 @@
-import lmstudio as lms
+from llms import get_backend
 import os
 import threading
 import queue
@@ -51,6 +51,7 @@ model_loaded_by_script = False
 model_name_loaded_by_script = None
 model_was_preloaded = False
 last_file_processed = None
+backend = None
 
 download_queue = queue.Queue()
 llm_queue = queue.Queue()
@@ -106,40 +107,10 @@ def print_verbose(message):
         print(message)
 
 
-def cleanup_server_and_model():
+def cleanup_server_and_model(backend):
     """Stop server and unload model if the script started/loaded them."""
     global server_started_by_script, model_loaded_by_script, model_was_preloaded, model_name_loaded_by_script
-    cli = shutil.which("lms")
-    if not cli:
-        return
-    
-    # Only unload if we loaded the model AND it wasn't already loaded when we started
-    should_unload = model_loaded_by_script and not model_was_preloaded
-    
-    if should_unload:
-        # Check if a model is actually loaded before trying to unload
-        try:
-            set_last_action("checking if model needs unloading")
-            result = subprocess.run([cli, "ps"], capture_output=True, text=True, timeout=5)
-            if result.returncode == 0 and result.stdout.strip():
-                # Only unload if there's an active model session
-                lines = result.stdout.strip().split('\n')
-                if len(lines) > 1:  # More than just the header
-                    set_last_action("unloading model")
-                    print_verbose(f"Unloading model {model_name_loaded_by_script}...")
-                    subprocess.run([cli, "unload", model_name_loaded_by_script], check=False, timeout=10)
-                    print_verbose("Model unloaded")
-        except Exception as e:
-            print_verbose(f"Failed to unload model: {e}")
-    
-    if server_started_by_script:
-        try:
-            set_last_action("stopping server")
-            print_verbose("Stopping LM Studio server...")
-            subprocess.run([cli, "server", "stop"], check=False, timeout=5)
-            print_verbose("Server stopped")
-        except Exception as e:
-            print_verbose(f"Failed to stop server: {e}")
+    backend.cleanup(model_loaded_by_script, model_name_loaded_by_script, server_started_by_script)
 
 
 def set_last_action(action: str):
@@ -202,7 +173,7 @@ def download_worker():
         print_status(f"Downloading {rel}.")
 
         try:
-            image_handle = lms.prepare_image(input_path)
+            image_handle = backend.prepare_image(input_path)
             llm_queue.put((input_path, image_handle))
             queued_count += 1
         except Exception as e:
@@ -218,7 +189,7 @@ def download_worker():
         print_status(f"Queued {rel}.")
 
 
-def llm_worker(model, prompt):
+def llm_worker(backend, model, prompt):
     global llm_count, llmed_count, queued_count, processed_count, failed_count, last_file_processed, slots_in_use
     while not stop_event.is_set():
         try:
@@ -245,14 +216,7 @@ def llm_worker(model, prompt):
 
         output_file = get_output_path(input_path)
         try:
-            chat = lms.Chat()
-            chat.add_user_message(prompt, images=[image_handle])
-            result = model.respond(chat)
-            # Prefer result.content if available (matches the simpler script),
-            # otherwise fallback to stringifying the result.
-            content = getattr(result, "content", None)
-            if content is None:
-                content = str(result)
+            content = backend.respond(model, prompt, image_handle)
             with open(output_file, "w", encoding="utf-8") as f:
                 f.write(content)
             llmed_count += 1
@@ -272,7 +236,7 @@ def llm_worker(model, prompt):
 
 # --- MAIN ---
 def main():
-    global discovered_count, to_download_count, skipped_count, INPUT_DIR, OUTPUT_DIR, llm_queue_semaphore, dirs_scanned
+    global discovered_count, to_download_count, skipped_count, INPUT_DIR, OUTPUT_DIR, llm_queue_semaphore, dirs_scanned, backend
 
     # Parse CLI options
     parser = argparse.ArgumentParser()
@@ -313,6 +277,8 @@ def main():
     # the SDK directly and fail fast if the SDK can't instantiate it.
 
     # Attempt to instantiate the requested model like the simple script does.
+    # Initialize backend early so helpers can use it
+    backend = get_backend(os.getenv("BACKEND"))
     model = None
     # Determine the model name to try: CLI arg > env var > built-in default
     model_name = args.model or MODEL_NAME or "qwen/qwen3-vl-8b"
@@ -429,18 +395,8 @@ def main():
             return False
 
     def start_server_via_cli():
-        # Use the CLI if available to start the server; return True if started successfully
-        cli = shutil.which("lms")
-        if cli:
-            set_last_action("starting server via CLI")
-            print_verbose("Starting LM Studio server via CLI... (lms server start)")
-            try:
-                subprocess.Popen([cli, "server", "start"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return True
-            except Exception as e:
-                print(f"Failed to start LM Studio server with CLI: {e}")
-                return False
-        return False
+        set_last_action("starting server via backend")
+        return backend.bootstrap_server(auto_start=True)
 
     def check_lms_server_running():
         """Try multiple ways to determine if LM Studio server is running.
@@ -448,40 +404,10 @@ def main():
         2) If SDK fails, try the `lms` CLI commands to detect server/model status.
         Returns (running: bool, detected_via: str).
         """
-        # Try SDK bootstrap
-        try:
-            lms.bootstrap()
-            set_last_action("sdk bootstrap success")
-            return True, "sdk"
-        except Exception:
-            pass
-
-        # Try the CLI as a fallback
-        cli = shutil.which("lms")
-        if not cli:
-            return False, "none"
-
-        cmds = [
-            [cli, "server", "status"],
-            [cli, "status"],
-            [cli, "server", "list"],
-            [cli, "model", "list"],
-        ]
-        for cmd in cmds:
-            try:
-                set_last_action(f"checking server via CLI: {' '.join(cmd)}")
-                out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, timeout=2, encoding="utf-8")
-                text = out.strip().lower()
-                if not text:
-                    continue
-                # Look for 'server: on' or 'loaded models' or anything that suggests server is active
-                if "server: on" in text or "on (port" in text or "loaded models" in text or "model" in text:
-                    return True, "cli"
-                # If the CLI returned any meaningful text, assume server is responding
-                return True, "cli"
-            except Exception:
-                continue
-
+        running = backend.bootstrap_server(auto_start=False)
+        if running:
+            set_last_action("backend server detected")
+            return True, "backend"
         return False, "none"
 
     # Check if server is running and optionally prompt to start it.
@@ -498,11 +424,7 @@ def main():
                 server_started_by_script = True
                 set_last_action("waiting for server to start")
                 time.sleep(2)
-                try:
-                    lms.bootstrap()
-                    server_running = True
-                except Exception:
-                    server_running = False
+                server_running = backend.bootstrap_server(auto_start=False)
         else:
             print_verbose("LM Studio server does not appear to be running.")
             yn = input("Start it now? [y/N]: ")
@@ -511,11 +433,7 @@ def main():
                     server_started_by_script = True
                     set_last_action("waiting for server to start")
                     time.sleep(2)
-                    try:
-                        lms.bootstrap()
-                        server_running = True
-                    except Exception:
-                        server_running = False
+                    server_running = backend.bootstrap_server(auto_start=False)
 
     # Attempt to instantiate the model like the non-opt version.
     # If no model name is provided at all, fail early with a clear message.
@@ -525,49 +443,27 @@ def main():
 
     # Check if model is already loaded before we try to load it
     global model_was_preloaded, model_name_loaded_by_script, model_loaded_by_script
-    cli = shutil.which("lms")
-    model_was_loaded_before = False
-    if cli:
-        try:
-            result = subprocess.run([cli, "ps"], capture_output=True, text=True, timeout=2)
-            if result.returncode == 0 and result.stdout.strip():
-                lines = result.stdout.strip().split('\n')
-                if len(lines) > 1:  # More than just the header
-                    model_was_loaded_before = True
-                    model_was_preloaded = True
-                    print_verbose(f"Model already loaded before script started")
-        except Exception:
-            pass
+    # Preload detection is handled inside backend implementation
 
     set_last_action(f"loading model {model_name}")
-    try:
-        model = lms.llm(model_name)
-        # If model instantiation succeeded but wasn't loaded before, we must have loaded it
-        if not model_was_loaded_before:
-            model_loaded_by_script = True
-            model_name_loaded_by_script = model_name
-            print_verbose(f"Model {model_name} loaded by SDK")
-    except Exception as e:
-        print(f"Failed to instantiate model {model_name} via SDK: {e}")
-        # If automatic install is disabled, don't attempt CLI load.
-        if args.no_install_model or env_bool("NO_INSTALL_MODEL", False) or not model_name:
+    set_last_action(f"loading model {model_name}")
+    allow_cli_install = not (args.no_install_model or env_bool("NO_INSTALL_MODEL", False))
+    model = backend.load_model(model_name, allow_cli_install=allow_cli_install)
+    if model is None:
+        if not allow_cli_install:
             print("Model not installed and automatic CLI install is disabled via --no-install-model. Exiting.")
             sys.exit(1)
-        # Prompt before installing via CLI
-        yn = input(f"Model {model_name} not installed. Attempt to load it via 'lms model load' now? [y/N]: ")
+        yn = input(f"Model {model_name} not installed. Attempt to load it via CLI now? [y/N]: ")
         if yn.strip().lower() in ("y", "yes"):
-            if cli_load_model_if_needed(model_name):
-                model_loaded_by_script = True
-                model_name_loaded_by_script = model_name
-                try:
-                    model = lms.llm(model_name)
-                except Exception as e2:
-                    print(f"Retry after CLI load still failed: {e2}")
-        # If still no model, exit (like the simple script).
-        if model is None:
-            print("Failed to instantiate model and CLI fallback failed. Exiting.")
-            cleanup_server_and_model()
-            sys.exit(1)
+            model = backend.load_model(model_name, allow_cli_install=True)
+    if model is None:
+        print("Failed to instantiate model and CLI fallback failed. Exiting.")
+        cleanup_server_and_model(backend)
+        sys.exit(1)
+    else:
+        model_loaded_by_script = True
+        model_name_loaded_by_script = model_name
+        print_verbose(f"Model {model_name} loaded by backend")
 
     # Start download and LLM worker threads
     for _ in range(NUM_DOWNLOAD_THREADS):
@@ -576,7 +472,7 @@ def main():
     # Only start LLM worker threads if we successfully have a model loaded.
     if model is not None and NUM_LLM_THREADS > 0:
         for _ in range(NUM_LLM_THREADS):
-            t = threading.Thread(target=llm_worker, args=(model, prompt_text), daemon=True)
+            t = threading.Thread(target=llm_worker, args=(backend, model, prompt_text), daemon=True)
             t.start()
     else:
         print("LLM model not available; skipping LLM worker startup.")
@@ -644,7 +540,7 @@ def main():
             time.sleep(0.5)
     finally:
         # Always cleanup server/model if we started them, even on Ctrl+C
-        cleanup_server_and_model()
+        cleanup_server_and_model(backend)
 
     print("\n--- DONE ---")
     # Always print the final status summary regardless of verbose mode.

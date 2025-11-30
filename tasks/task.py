@@ -1,0 +1,196 @@
+import os
+
+
+class Task:
+    def __init__(self, maximum=1, input_dir=None):
+        self.queue = []          # items waiting
+        self.active = []         # items processing
+        self.maximum = maximum   # max active allowed
+        self.input_dir = input_dir  # for relative path display
+
+        # recent counters
+        self.recent_done = 0
+        self.recent_failed = 0
+        self.recent_input = 0
+        self.recent_output = 0
+        self.recent_rejected = 0
+
+        # total counters
+        self.total_done = 0
+        self.total_failed = 0
+        self.total_input = 0
+        self.total_output = 0
+        self.total_rejected = 0
+
+    # --- Queue Management ----------------------------------------------------
+
+    def add(self, item):
+        """Add an item to the queue."""
+        self.queue.append(item)
+
+    def start_next(self, next_task=None, backpressure_multiplier=2.0):
+        """
+        Move next item from queue to active
+        and return it if capacity allows.
+        
+        Args:
+            next_task: Optional next task in pipeline. If provided, checks if downstream has capacity.
+            backpressure_multiplier: Allow downstream queue to grow to (max * multiplier) before stopping.
+        """
+        # Check if we have capacity
+        if len(self.active) >= self.maximum or not self.queue:
+            return None
+        
+        # Check if next task has capacity (only check queue, allow it to build up)
+        if next_task is not None:
+            threshold = next_task.maximum * backpressure_multiplier
+            if len(next_task.queue) >= threshold:
+                # Downstream queue is too full, don't start more work
+                return None
+        
+        # Start the item
+        item = self.queue.pop(0)
+        self.active.append(item)
+        return item
+
+    def finish(self, item, output_count=1):
+        """Mark as done with output count."""
+        if item in self.active:
+            self.active.remove(item)
+        self.recent_done += 1
+        self.total_done += 1
+        self.recent_input += 1
+        self.total_input += 1
+        self.recent_output += output_count
+        self.total_output += output_count
+
+    def fail(self, item):
+        """Mark as failed."""
+        if item in self.active:
+            self.active.remove(item)
+        self.recent_failed += 1
+        self.total_failed += 1
+        self.recent_input += 1
+        self.total_input += 1
+
+    def reject(self, item):
+        """Mark as rejected (e.g., skipped)."""
+        if item in self.active:
+            self.active.remove(item)
+        self.recent_rejected += 1
+        self.total_rejected += 1
+        self.recent_input += 1
+        self.total_input += 1
+
+    def reset_recent(self):
+        """Reset recent counters."""
+        self.recent_done = 0
+        self.recent_failed = 0
+        self.recent_input = 0
+        self.recent_output = 0
+        self.recent_rejected = 0
+
+    def stats(self):
+        """Return internal counters."""
+        return {
+            "queue": len(self.queue),
+            "active": self.active,  # Return list, not length
+            "recent_done": self.recent_done,
+            "recent_failed": self.recent_failed,
+            "total_done": self.total_done,
+            "total_failed": self.total_failed,
+            "recent_input": self.recent_input,
+            "recent_output": self.recent_output,
+            "total_input": self.total_input,
+            "total_output": self.total_output,
+            "recent_rejected": self.recent_rejected,
+            "total_rejected": self.total_rejected,
+        }
+
+    def format_status(self, name):
+        """Format status string with input>output when different, relative paths for active items."""
+        stats = self.stats()
+        q = len(self.queue)
+        
+        # Include pending_queue in queue count for accurate display
+        if hasattr(self, 'pending_queue'):
+            q += len(self.pending_queue)
+        
+        a = len(stats["active"])
+        m = self.maximum
+        rf = stats["recent_failed"]
+        tf = stats["total_failed"]
+        ri = stats["recent_input"]
+        ro = stats["recent_output"]
+        ti = stats["total_input"]
+        to = stats["total_output"]
+        rr = stats["recent_rejected"]
+        tr = stats["total_rejected"]
+        
+        # Format recent: show input>output if different, else just count
+        if ri == ro:
+            recent_str = f"{ri}D"
+        else:
+            recent_str = f"{ri}>{ro}D"
+        
+        # Add failed count if non-zero (for recent) - before R and D
+        if rf > 0:
+            recent_str = f"{rf}F{recent_str}"
+        
+        # Add rejected count if non-zero (for recent) - before D but after F
+        if rr > 0:
+            # Insert R before the D
+            if 'D' in recent_str:
+                recent_str = recent_str.replace('D', f'{rr}R', 1).replace(f'{rr}R', f'{rr}RD', 1)[:-1]
+                # Simpler: insert before last character (D)
+                recent_str = recent_str[:-1] + f"{rr}R" + recent_str[-1]
+        
+        recent_fmt = recent_str
+        
+        # Format total: show input>output if different, else just count
+        if ti == to:
+            total_str = f"{ti}D"
+        else:
+            total_str = f"{ti}>{to}D"
+        
+        # Add failed count if non-zero (for total) - before R and D
+        if tf > 0:
+            total_str = f"{tf}F{total_str}"
+        
+        # Add rejected count if non-zero (for total) - before D but after F
+        if tr > 0:
+            # Insert R before the D
+            total_str = total_str[:-1] + f"{tr}R" + total_str[-1]
+        
+        total_fmt = total_str
+        
+        # Format active items with relative paths
+        active_str = ""
+        if a > 0 and stats["active"]:
+            active_items = []
+            for item in stats["active"][:2]:
+                # Extract path from item (could be string or tuple)
+                if isinstance(item, tuple):
+                    # For tasks like Download/LLM that pass (path, handle/content)
+                    item_str = str(item[0])
+                else:
+                    item_str = str(item)
+                
+                # Relativize path if possible (handle both regular and UNC paths)
+                if self.input_dir and isinstance(item_str, str):
+                    try:
+                        # Check if path starts with input_dir (works for UNC and regular paths)
+                        if item_str.startswith(self.input_dir):
+                            item_str = os.path.relpath(item_str, self.input_dir)
+                        elif os.path.isabs(item_str):
+                            # Try relpath anyway, fallback to basename
+                            item_str = os.path.relpath(item_str, self.input_dir)
+                    except (ValueError, TypeError):
+                        # Different drives or other issues - use basename as fallback
+                        item_str = os.path.basename(item_str)
+                active_items.append(item_str)
+            active_str = f" ({', '.join(active_items)})"
+            if a > 2:
+                active_str = f" ({', '.join(active_items)}, ...)"
+        
+        return f"{name}: {q}Q->{a}A/{m}M->{recent_fmt}/{total_fmt}{active_str}"

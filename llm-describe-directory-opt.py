@@ -27,6 +27,7 @@ MAX_DISCOVERY = int(os.getenv("MAX_DISCOVERY", "100"))  # Safety limit: maximum 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 MODEL_NAME = os.getenv("MODEL_NAME")
 MODEL_MIN_VRAM_GB = int(os.getenv("MODEL_MIN_VRAM_GB", "12"))  # Minimum free GPU memory required to attempt loading this model (best-effort check)
+SORT_ORDER = os.getenv("SORT_ORDER", "natural-desc")  # natural-desc|natural-asc|name-desc|name-asc
 
 # --- GLOBALS ---
 stop_event = threading.Event()
@@ -284,12 +285,17 @@ def main():
     # Default to env var value, or fall back to the simple script default
     default_model = MODEL_NAME if MODEL_NAME is not None else "qwen/qwen3-vl-8b"
     parser.add_argument("--model", default=default_model, help="Vision-enabled model to use")
-    parser.add_argument("--prompt", default="Beschrijf de foto in het Nederlands", help="Prompt to describe the image. Prefix with @ to load from file, e.g. @prompt.txt")
-    parser.add_argument("--prompt-file", dest="prompt_file", default=None, help="Path to a text file containing the prompt")
+    parser.add_argument("--prompt", default=os.getenv("PROMPT", "Beschrijf de foto in het Nederlands"), help="Prompt to describe the image. Prefix with @ to load from file, e.g. @prompt.txt")
+    parser.add_argument("--prompt-file", dest="prompt_file", default=os.getenv("PROMPT_FILE", None), help="Path to a text file containing the prompt")
     parser.add_argument("--auto-start", action="store_true", help="Automatically start LM Studio server via CLI without prompting")
     parser.add_argument("--no-install-model", action="store_true", help="Do not automatically install/load model via the LM Studio CLI if missing")
     parser.add_argument("--status-interval", dest="status_interval", type=float, default=None, help="How often (seconds) to print periodic status. Overrides STATUS_INTERVAL env var.")
     parser.add_argument("-v", "--verbose", dest="verbose", action="store_true", help="Enable verbose logging of per-file actions (Downloading/Queued/LLM/Skipped)")
+    parser.add_argument("--num-download-threads", dest="num_download_threads", type=int, default=None, help="Number of download worker threads (env: NUM_DOWNLOAD_THREADS)")
+    parser.add_argument("--num-llm-threads", dest="num_llm_threads", type=int, default=None, help="Number of LLM worker threads (env: NUM_LLM_THREADS)")
+    parser.add_argument("--max-downloaded-before-llm", dest="max_downloaded_before_llm", type=int, default=None, help="Queue size limit for prepared images (env: MAX_DOWNLOADED_BEFORE_LLM)")
+    parser.add_argument("--max-discovery", dest="max_discovery", type=int, default=None, help="Safety limit for files to discover (env: MAX_DISCOVERY)")
+    parser.add_argument("--sort-order", dest="sort_order", choices=["natural-desc","natural-asc","name-desc","name-asc"], default=os.getenv("SORT_ORDER","natural-desc"), help="Sorting of dirs/files during discovery")
     # Keep CLI minimal to mirror the simpler script
     args = parser.parse_args()
     # Allow overriding paths from CLI
@@ -310,9 +316,14 @@ def main():
     model = None
     # Determine the model name to try: CLI arg > env var > built-in default
     model_name = args.model or MODEL_NAME or "qwen/qwen3-vl-8b"
-    # Verbose flag controls most prints of per-file actions.
+    # Verbose flag controls most prints of per-file actions, allow env override
+    def env_bool(name: str, default: bool=False) -> bool:
+        val = os.getenv(name)
+        if val is None:
+            return default
+        return str(val).strip().lower() in ("1","true","yes","y","on")
     global VERBOSE
-    VERBOSE = bool(args.verbose)
+    VERBOSE = bool(args.verbose or env_bool("VERBOSE", False))
     if VERBOSE:
         print(f"Using model: {model_name}")
 
@@ -334,11 +345,36 @@ def main():
         # Fallback to CLI prompt text
         return cli_prompt
 
-    prompt_text = load_prompt_text(args.prompt, args.prompt_file)
+    # Resolve prompt from CLI or env
+    cli_prompt = args.prompt if args.prompt is not None else os.getenv("PROMPT", "Beschrijf de foto in het Nederlands")
+    prompt_file_path = args.prompt_file if args.prompt_file is not None else os.getenv("PROMPT_FILE", None)
+    prompt_text = load_prompt_text(cli_prompt, prompt_file_path)
     if VERBOSE:
-        print(f"Prompt source: {'file' if (args.prompt_file or (args.prompt.startswith('@') and len(args.prompt)>1)) else 'inline'}")
+        print(f"Prompt source: {'file' if (prompt_file_path or (isinstance(cli_prompt,str) and cli_prompt.startswith('@') and len(cli_prompt)>1)) else 'inline'}")
     
-    # Initialize semaphore to strictly enforce queue limit
+    # Compute final runtime configuration from CLI or env and init semaphore
+    global NUM_DOWNLOAD_THREADS, NUM_LLM_THREADS, MAX_DOWNLOADED_BEFORE_LLM, MAX_DISCOVERY, SORT_ORDER
+    if args.num_download_threads is not None:
+        NUM_DOWNLOAD_THREADS = max(1, int(args.num_download_threads))
+    else:
+        NUM_DOWNLOAD_THREADS = max(1, int(os.getenv("NUM_DOWNLOAD_THREADS", str(NUM_DOWNLOAD_THREADS))))
+    if args.num_llm_threads is not None:
+        NUM_LLM_THREADS = max(0, int(args.num_llm_threads))
+    else:
+        NUM_LLM_THREADS = max(0, int(os.getenv("NUM_LLM_THREADS", str(NUM_LLM_THREADS))))
+    if args.max_downloaded_before_llm is not None:
+        MAX_DOWNLOADED_BEFORE_LLM = max(1, int(args.max_downloaded_before_llm))
+    else:
+        MAX_DOWNLOADED_BEFORE_LLM = max(1, int(os.getenv("MAX_DOWNLOADED_BEFORE_LLM", str(MAX_DOWNLOADED_BEFORE_LLM))))
+    if args.max_discovery is not None:
+        MAX_DISCOVERY = max(1, int(args.max_discovery))
+    else:
+        MAX_DISCOVERY = max(1, int(os.getenv("MAX_DISCOVERY", str(MAX_DISCOVERY))))
+    SORT_ORDER = args.sort_order or os.getenv("SORT_ORDER", SORT_ORDER)
+
+    if VERBOSE:
+        print(f"Threads: download={NUM_DOWNLOAD_THREADS}, llm={NUM_LLM_THREADS}; Limits: prepared={MAX_DOWNLOADED_BEFORE_LLM}, discovery={MAX_DISCOVERY}; Sort={SORT_ORDER}")
+
     llm_queue_semaphore = threading.Semaphore(MAX_DOWNLOADED_BEFORE_LLM)
     
     # Start periodic status thread early so it shows progress during server/model setup
@@ -455,7 +491,7 @@ def main():
 
     if not server_running:
         global server_started_by_script
-        if args.auto_start:
+        if args.auto_start or env_bool("AUTO_START", False):
             set_last_action("server not running; starting via CLI")
             print_verbose("LM Studio server does not appear to be running; attempting to start via CLI...")
             if start_server_via_cli():
@@ -514,7 +550,7 @@ def main():
     except Exception as e:
         print(f"Failed to instantiate model {model_name} via SDK: {e}")
         # If automatic install is disabled, don't attempt CLI load.
-        if args.no_install_model or not model_name:
+        if args.no_install_model or env_bool("NO_INSTALL_MODEL", False) or not model_name:
             print("Model not installed and automatic CLI install is disabled via --no-install-model. Exiting.")
             sys.exit(1)
         # Prompt before installing via CLI
@@ -553,11 +589,16 @@ def main():
         for root, dirs, files in os.walk(INPUT_DIR):
             # Track how many directories have been scanned
             dirs_scanned += 1
-            # Natural descending sort of directories and files
+            # Sorting of directories and files per SORT_ORDER
             def _natural_key(s: str):
                 return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', s)]
-            dirs[:] = sorted(dirs, key=_natural_key, reverse=True)
-            files = sorted(files, key=_natural_key, reverse=True)
+            if SORT_ORDER.startswith("natural"):
+                key_fn = _natural_key
+            else:
+                key_fn = lambda s: s.lower()
+            rev = SORT_ORDER.endswith("desc")
+            dirs[:] = sorted(dirs, key=key_fn, reverse=rev)
+            files = sorted(files, key=key_fn, reverse=rev)
             for file in files:
                 if stop_event.is_set():
                     break

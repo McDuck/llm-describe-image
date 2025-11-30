@@ -284,7 +284,8 @@ def main():
     # Default to env var value, or fall back to the simple script default
     default_model = MODEL_NAME if MODEL_NAME is not None else "qwen/qwen3-vl-8b"
     parser.add_argument("--model", default=default_model, help="Vision-enabled model to use")
-    parser.add_argument("--prompt", default="Beschrijf de foto in het Nederlands", help="Prompt to describe the image")
+    parser.add_argument("--prompt", default="Beschrijf de foto in het Nederlands", help="Prompt to describe the image. Prefix with @ to load from file, e.g. @prompt.txt")
+    parser.add_argument("--prompt-file", dest="prompt_file", default=None, help="Path to a text file containing the prompt")
     parser.add_argument("--auto-start", action="store_true", help="Automatically start LM Studio server via CLI without prompting")
     parser.add_argument("--no-install-model", action="store_true", help="Do not automatically install/load model via the LM Studio CLI if missing")
     parser.add_argument("--status-interval", dest="status_interval", type=float, default=None, help="How often (seconds) to print periodic status. Overrides STATUS_INTERVAL env var.")
@@ -314,6 +315,28 @@ def main():
     VERBOSE = bool(args.verbose)
     if VERBOSE:
         print(f"Using model: {model_name}")
+
+    # Determine final prompt (CLI string, @file, or --prompt-file)
+    def load_prompt_text(cli_prompt: str, prompt_file: str | None) -> str:
+        # If explicit prompt_file provided, use it
+        file_path = None
+        if prompt_file:
+            file_path = prompt_file
+        # Support @file shorthand in --prompt
+        if cli_prompt and cli_prompt.startswith("@") and len(cli_prompt) > 1:
+            file_path = cli_prompt[1:]
+        if file_path:
+            try:
+                with open(file_path, "r", encoding="utf-8") as pf:
+                    return pf.read().strip()
+            except Exception as e:
+                print(f"Failed to read prompt file '{file_path}': {e}")
+        # Fallback to CLI prompt text
+        return cli_prompt
+
+    prompt_text = load_prompt_text(args.prompt, args.prompt_file)
+    if VERBOSE:
+        print(f"Prompt source: {'file' if (args.prompt_file or (args.prompt.startswith('@') and len(args.prompt)>1)) else 'inline'}")
     
     # Initialize semaphore to strictly enforce queue limit
     llm_queue_semaphore = threading.Semaphore(MAX_DOWNLOADED_BEFORE_LLM)
@@ -517,7 +540,7 @@ def main():
     # Only start LLM worker threads if we successfully have a model loaded.
     if model is not None and NUM_LLM_THREADS > 0:
         for _ in range(NUM_LLM_THREADS):
-            t = threading.Thread(target=llm_worker, args=(model, args.prompt), daemon=True)
+            t = threading.Thread(target=llm_worker, args=(model, prompt_text), daemon=True)
             t.start()
     else:
         print("LLM model not available; skipping LLM worker startup.")

@@ -54,17 +54,13 @@ BACKPRESSURE_MULTIPLIER = float(os.getenv("BACKPRESSURE_MULTIPLIER", "2.0"))
 
 # Global state
 stop_event = threading.Event()
-sigint_pressed = False
 status_lock = threading.Lock()  # Coordinate status printing and queue updates
 task_completed_items = {}  # Track completed items per task for verbose output
 
-
 def signal_handler(sig, frame):
     """Handle Ctrl+C gracefully."""
-    global sigint_pressed
-    sigint_pressed = True
+    print("\nRecieved SIGINT. Stopping...")
     stop_event.set()
-    print("\n[Ctrl+C] Stopping...")
 
 
 def format_and_print_status(tasks, include_verbose=False):
@@ -238,9 +234,6 @@ def worker_thread(task, next_task=None, transform=None, check_rejection=None, ha
                     
         except Exception as e:
             task.fail(item)
-            # Don't print errors during shutdown
-            if VERBOSE and not stop_event.is_set():
-                print(f"Task error: {e}")
 
 
 def status_printer(tasks, interval=5.0):
@@ -269,6 +262,10 @@ def status_printer(tasks, interval=5.0):
 
 
 def main():
+    # Setup signal handler
+    import signal as sig
+    sig.signal(sig.SIGINT, signal_handler)
+
     global INPUT_DIR, OUTPUT_DIR, VERBOSE
     
     # Parse arguments
@@ -309,10 +306,6 @@ def main():
     print(f"Using model: {model_name}")
     print(f"Prompt source: {'file' if args.prompt_file or (prompt_text.startswith('@')) else 'inline'}")
     print(f"Threads: skip={NUM_SKIP_CHECKER_THREADS}, download={NUM_DOWNLOAD_THREADS}, llm={NUM_LLM_THREADS}, write={NUM_WRITE_THREADS}")
-    
-    # Setup signal handler
-    import signal as sig
-    sig.signal(sig.SIGINT, signal_handler)
     
     # Load task modules
     tasks_dir = os.path.join(os.path.dirname(__file__), "tasks")
@@ -464,9 +457,6 @@ def main():
     for name, task in tasks.items():
         stats = task.stats()
         print(f"[{timestamp}] {name}: {stats['total_done']} done, {stats['total_failed']} failed")
-    
-    if sigint_pressed:
-        print("Stopped by user (Ctrl+C)")
 
 
 if __name__ == "__main__":

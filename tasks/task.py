@@ -90,42 +90,24 @@ class Task:
         self.recent_output = 0
         self.recent_rejected = 0
 
-    def stats(self):
-        """Return internal counters."""
-        return {
-            "queue": len(self.queue),
-            "active": self.active,  # Return list, not length
-            "recent_done": self.recent_done,
-            "recent_failed": self.recent_failed,
-            "total_done": self.total_done,
-            "total_failed": self.total_failed,
-            "recent_input": self.recent_input,
-            "recent_output": self.recent_output,
-            "total_input": self.total_input,
-            "total_output": self.total_output,
-            "recent_rejected": self.recent_rejected,
-            "total_rejected": self.total_rejected,
-        }
-
     def format_status(self, name):
         """Format status string with input>output when different, relative paths for active items."""
-        stats = self.stats()
         q = len(self.queue)
         
         # Include pending_queue in queue count for accurate display
         if hasattr(self, 'pending_queue'):
             q += len(self.pending_queue)
         
-        a = len(stats["active"])
+        a = len(self.active)
         m = self.maximum
-        rf = stats["recent_failed"]
-        tf = stats["total_failed"]
-        ri = stats["recent_input"]
-        ro = stats["recent_output"]
-        ti = stats["total_input"]
-        to = stats["total_output"]
-        rr = stats["recent_rejected"]
-        tr = stats["total_rejected"]
+        rf = self.recent_failed
+        tf = self.total_failed
+        ri = self.recent_input
+        ro = self.recent_output
+        ti = self.total_input
+        to = self.total_output
+        rr = self.recent_rejected
+        tr = self.total_rejected
         
         # Format recent: show input>output if different, else just count
         if ri == ro:
@@ -166,9 +148,9 @@ class Task:
         
         # Format active items with relative paths
         active_str = ""
-        if a > 0 and stats["active"]:
+        if a > 0 and self.active:
             active_items = []
-            for item in stats["active"][:2]:
+            for item in self.active[:2]:
                 # Extract path from item (could be string or tuple)
                 if isinstance(item, tuple):
                     # For tasks like Download/LLM that pass (path, handle/content)

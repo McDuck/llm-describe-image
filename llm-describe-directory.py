@@ -362,7 +362,12 @@ def main():
     }
     
     # Start status printer
-    status_thread = threading.Thread(target=status_printer, args=(tasks, args.status_interval), daemon=True)
+    status_thread = threading.Thread(
+        name="Status",
+        target=status_printer,
+        args=(tasks, args.status_interval),
+        daemon=True
+    )
     status_thread.start()
     
     # Start worker threads
@@ -371,6 +376,7 @@ def main():
     # Discover -> SkipCheck (discovers list of files)
     for _ in range(1):
         t = threading.Thread(
+            name="Discover",
             target=worker_thread,
             args=(discover_task, skip_check_task, None, None, True, tasks),  # has_pending_queue=True, tasks
             daemon=True
@@ -389,6 +395,7 @@ def main():
     
     for _ in range(NUM_SKIP_CHECKER_THREADS):
         t = threading.Thread(
+            name="SkipCheck",
             target=worker_thread,
             args=(skip_check_task, download_task, skip_transform, check_skip_rejection, False, tasks),
             daemon=True
@@ -399,6 +406,7 @@ def main():
     # Download -> LLM
     for _ in range(NUM_DOWNLOAD_THREADS):
         t = threading.Thread(
+            name="Download",
             target=worker_thread,
             args=(download_task, llm_task, None, None, False, tasks),
             daemon=True
@@ -409,6 +417,7 @@ def main():
     # LLM -> Write
     for _ in range(NUM_LLM_THREADS):
         t = threading.Thread(
+            name="LLM",
             target=worker_thread,
             args=(llm_task, write_task, None, None, False, tasks),
             daemon=True
@@ -419,6 +428,7 @@ def main():
     # Write (final stage)
     for _ in range(NUM_WRITE_THREADS):
         t = threading.Thread(
+            name="Write",
             target=worker_thread,
             args=(write_task, None, None, None, False, tasks),
             daemon=True
@@ -427,36 +437,38 @@ def main():
         threads.append(t)
     
     # Wait for completion
-    try:
-        while not stop_event.is_set():
-            # Check if all tasks are empty (including pending_queue)
-            with status_lock:
-                all_empty = all(
-                    len(task.queue) == 0 and 
-                    len(task.active) == 0 and
-                    (not hasattr(task, 'pending_queue') or len(task.pending_queue) == 0)
-                    for task in tasks.values()
-                )
-            
-            if all_empty:
-                break
-            
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        stop_event.set()
+    while not stop_event.is_set():
+        # Check if all tasks are empty (including pending_queue)
+        with status_lock:
+            all_empty = all(
+                len(task.queue) == 0 and 
+                len(task.active) == 0 and
+                (not hasattr(task, 'pending_queue') or len(task.pending_queue) == 0)
+                for task in tasks.values()
+            )
+        
+        if all_empty:
+            break
+        
+        time.sleep(0.5)
     
     # Wait for threads to finish (with timeout)
     for t in threads:
         t.join(timeout=2.0)
     status_thread.join(timeout=1.0)
+
+    threads_alive = True
+    while threads_alive:
+        threads_alive = False
+        alive_threads = [t for t in threads if t.is_alive()]
+        if alive_threads:
+            print("Waiting for threads to finish...", ", ".join([t.name for t in alive_threads]));
+            time.sleep(2.0)
     
-    print("\n--- DONE ---")
+    print("\nDone. Final update:")
     
     # Print final stats
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    for name, task in tasks.items():
-        stats = task.stats()
-        print(f"[{timestamp}] {name}: {stats['total_done']} done, {stats['total_failed']} failed")
+    format_and_print_status(tasks, include_verbose=True)
 
 
 if __name__ == "__main__":

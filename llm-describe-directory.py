@@ -152,88 +152,102 @@ def worker_thread(task, next_task=None, transform=None, check_rejection=None, ha
         check_rejection: Optional function to check if result should be rejected (returns True if rejected)
         has_pending_queue: If True, expects result to be (actual_result, pending_items) tuple
     """
-    while not stop_event.is_set():
-        # Try to start next item (check downstream capacity with backpressure)
-        item = task.start_next(next_task, BACKPRESSURE_MULTIPLIER)
-        if item is None:
-            time.sleep(0.1)
-            continue
-        
-        try:
-            # Execute task
-            result = task.execute(item)
+    # Load resources at thread start
+    try:
+        task.load()
+    except Exception as e:
+        print(f"Failed to load resources for {task.__class__.__name__}: {e}")
+        return
+    
+    try:
+        while not stop_event.is_set():
+            # Try to start next item (check downstream capacity with backpressure)
+            item = task.start_next(next_task, BACKPRESSURE_MULTIPLIER)
+            if item is None:
+                time.sleep(0.1)
+                continue
             
-            # Check if result should be rejected
-            is_rejected = check_rejection(result) if check_rejection else False
-            
-            if is_rejected:
-                task.reject(item)
-            else:
-                # Calculate output count
-                output_count = 0
-                pending_items = []
+            try:
+                # Execute task
+                result = task.execute(item)
                 
-                # Special handling for tasks with pending queue (e.g., DiscoverTask)
-                if has_pending_queue and isinstance(result, tuple) and len(result) == 2:
-                    actual_result, pending_items = result
-                    output_count = len(actual_result) if isinstance(actual_result, list) else (1 if actual_result else 0)
-                    output_count += len(pending_items) if isinstance(pending_items, list) else 0
-                    result = actual_result
+                # Check if result should be rejected
+                is_rejected = check_rejection(result) if check_rejection else False
+                
+                if is_rejected:
+                    task.reject(item)
                 else:
-                    # Standard output counting
-                    if isinstance(result, list):
-                        output_count = len(result)
-                    elif result is not None:
-                        output_count = 1
-                
-                task.finish(item, output_count)
-                
-                # Track completed item for status line verbose output
-                if VERBOSE:
-                    task_name = task.__class__.__name__.replace('Task', '')
-                    with status_lock:
-                        if task_name not in task_completed_items:
-                            task_completed_items[task_name] = []
-                        
-                        # Store item with its outputs for verbose display in status
-                        if pending_items:
-                            task_completed_items[task_name].append((item, pending_items))
-                        elif isinstance(result, list) and result:
-                            task_completed_items[task_name].append((item, result))
+                    # Calculate output count
+                    output_count = 0
+                    pending_items = []
+                    
+                    # Special handling for tasks with pending queue (e.g., DiscoverTask)
+                    if has_pending_queue and isinstance(result, tuple) and len(result) == 2:
+                        actual_result, pending_items = result
+                        output_count = len(actual_result) if isinstance(actual_result, list) else (1 if actual_result else 0)
+                        output_count += len(pending_items) if isinstance(pending_items, list) else 0
+                        result = actual_result
+                    else:
+                        # Standard output counting
+                        if isinstance(result, list):
+                            output_count = len(result)
                         elif result is not None:
-                            # Single output (e.g., Write task returns output_file)
-                            task_completed_items[task_name].append((item, [result]))
-                        else:
-                            task_completed_items[task_name].append((item, None))
+                            output_count = 1
                     
-                    # Print status immediately after completion
-                    if tasks is not None:
-                        format_and_print_status(tasks, include_verbose=True)
-                        # Clear completed items after printing
-                        task_completed_items.clear()
-                        # Reset recent counters after printing
-                        for t in tasks.values():
-                            t.reset_recent()
-                
-                # Store pending items to be added after status print
-                if pending_items and hasattr(task, 'pending_queue'):
-                    with status_lock:
-                        task.pending_queue.extend(pending_items)
-            
-            # Pass to next stage if configured
-            if next_task is not None and not is_rejected:
-                if transform:
-                    result = transform(result)
-                
-                # Handle different result types
-                if isinstance(result, list):
-                    for r in result:
-                        next_task.add(r)
-                elif result is not None:
-                    next_task.add(result)
+                    task.finish(item, output_count)
                     
-        except Exception as e:
-            task.fail(item)
+                    # Track completed item for status line verbose output
+                    if VERBOSE:
+                        task_name = task.__class__.__name__.replace('Task', '')
+                        with status_lock:
+                            if task_name not in task_completed_items:
+                                task_completed_items[task_name] = []
+                            
+                            # Store item with its outputs for verbose display in status
+                            if pending_items:
+                                task_completed_items[task_name].append((item, pending_items))
+                            elif isinstance(result, list) and result:
+                                task_completed_items[task_name].append((item, result))
+                            elif result is not None:
+                                # Single output (e.g., Write task returns output_file)
+                                task_completed_items[task_name].append((item, [result]))
+                            else:
+                                task_completed_items[task_name].append((item, None))
+                        
+                        # Print status immediately after completion
+                        if tasks is not None:
+                            format_and_print_status(tasks, include_verbose=True)
+                            # Clear completed items after printing
+                            task_completed_items.clear()
+                            # Reset recent counters after printing
+                            for t in tasks.values():
+                                t.reset_recent()
+                    
+                    # Store pending items to be added after status print
+                    if pending_items and hasattr(task, 'pending_queue'):
+                        with status_lock:
+                            task.pending_queue.extend(pending_items)
+                
+                # Pass to next stage if configured
+                if next_task is not None and not is_rejected:
+                    if transform:
+                        result = transform(result)
+                    
+                    # Handle different result types
+                    if isinstance(result, list):
+                        for r in result:
+                            next_task.add(r)
+                    elif result is not None:
+                        next_task.add(result)
+                        
+            except Exception as e:
+                task.fail(item)
+    finally:
+        # Unload resources at thread end
+        try:
+            task.unload()
+        except Exception:
+            pass
 
 
 def status_printer(tasks, interval=5.0):

@@ -12,12 +12,32 @@ from llms import get_backend
 class LLMTask(Task):
     def __init__(self, maximum=1, model_name=None, prompt=None, backend_name=None, input_dir=None):
         super().__init__(maximum, input_dir=input_dir)
-        self.backend = get_backend(backend_name)
-        self.model = self.backend.load_model(model_name, allow_cli_install=False) if self.backend else None
+        self.model_name = model_name
+        self.backend_name = backend_name
+        self.backend = None
+        self.model = None
         self.prompt = prompt
+
+    def load(self):
+        """Load the model and backend. Called by worker thread at start."""
+        self.backend = get_backend(self.backend_name)
+        if self.backend:
+            self.model = self.backend.load_model(self.model_name, allow_cli_install=False)
         
         if not self.model:
-            raise Exception(f"Failed to load model: {model_name}")
+            raise Exception(f"Failed to load model: {self.model_name}")
+    
+    def unload(self):
+        """Unload the model. Called by worker thread at end."""
+        if self.backend and hasattr(self.backend, 'cleanup'):
+            # Assuming model was loaded by script, not preloaded
+            self.backend.cleanup(
+                model_loaded_by_script=True,
+                model_name=self.model_name,
+                server_started_by_script=False
+            )
+        self.model = None
+        self.backend = None
 
     def execute(self, item):
         """

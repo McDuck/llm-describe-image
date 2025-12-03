@@ -58,6 +58,16 @@ class Task:
         self.recent = TaskStats()
         self.total = TaskStats()
 
+    # --- Lifecycle Methods ---------------------------------------------------
+    
+    def load(self):
+        """Load resources at worker thread start. Override in subclasses if needed."""
+        pass
+    
+    def unload(self):
+        """Unload resources at worker thread end. Override in subclasses if needed."""
+        pass
+
     # --- Queue Management ----------------------------------------------------
 
     def add(self, item):

@@ -1,6 +1,52 @@
 import os
 
 
+class TaskStats:
+    """Statistics for a task including input/output counts, failures, and rejections."""
+    def __init__(self):
+        self.done = 0
+        self.failed = 0
+        self.input = 0
+        self.output = 0
+        self.rejected = 0
+    
+    def reset(self):
+        """Reset all counters to zero."""
+        self.done = 0
+        self.failed = 0
+        self.input = 0
+        self.output = 0
+        self.rejected = 0
+    
+    def finish(self, output_count=1):
+        """Record a finished item with output count."""
+        self.done += 1
+        self.input += 1
+        self.output += output_count
+    
+    def fail(self):
+        """Record a failed item."""
+        self.failed += 1
+        self.input += 1
+    
+    def reject(self):
+        """Record a rejected item."""
+        self.rejected += 1
+        self.input += 1
+    
+    def format(self):
+        """Format stats as string: [input>][failed F][rejected R]output D"""
+        fmt = ""
+        if self.input != self.output:
+            fmt = f"{self.input}>"
+        if self.failed > 0:
+            fmt = f"{fmt}{self.failed}F"
+        if self.rejected > 0:
+            fmt = f"{fmt}{self.rejected}R"
+        fmt = f"{fmt}{self.output}D"
+        return fmt
+
+
 class Task:
     def __init__(self, maximum=1, input_dir=None):
         self.queue = []          # items waiting
@@ -8,19 +54,9 @@ class Task:
         self.maximum = maximum   # max active allowed
         self.input_dir = input_dir  # for relative path display
 
-        # recent counters
-        self.recent_done = 0
-        self.recent_failed = 0
-        self.recent_input = 0
-        self.recent_output = 0
-        self.recent_rejected = 0
-
-        # total counters
-        self.total_done = 0
-        self.total_failed = 0
-        self.total_input = 0
-        self.total_output = 0
-        self.total_rejected = 0
+        # Stats objects
+        self.recent = TaskStats()
+        self.total = TaskStats()
 
     # --- Queue Management ----------------------------------------------------
 
@@ -57,38 +93,26 @@ class Task:
         """Mark as done with output count."""
         if item in self.active:
             self.active.remove(item)
-        self.recent_done += 1
-        self.total_done += 1
-        self.recent_input += 1
-        self.total_input += 1
-        self.recent_output += output_count
-        self.total_output += output_count
+        self.recent.finish(output_count)
+        self.total.finish(output_count)
 
     def fail(self, item):
         """Mark as failed."""
         if item in self.active:
             self.active.remove(item)
-        self.recent_failed += 1
-        self.total_failed += 1
-        self.recent_input += 1
-        self.total_input += 1
+        self.recent.fail()
+        self.total.fail()
 
     def reject(self, item):
         """Mark as rejected (e.g., skipped)."""
         if item in self.active:
             self.active.remove(item)
-        self.recent_rejected += 1
-        self.total_rejected += 1
-        self.recent_input += 1
-        self.total_input += 1
+        self.recent.reject()
+        self.total.reject()
 
     def reset_recent(self):
         """Reset recent counters."""
-        self.recent_done = 0
-        self.recent_failed = 0
-        self.recent_input = 0
-        self.recent_output = 0
-        self.recent_rejected = 0
+        self.recent.reset()
 
     def format_status(self, name):
         """Format status string with input>output when different, relative paths for active items."""
@@ -100,39 +124,10 @@ class Task:
         
         a = len(self.active)
         m = self.maximum
-        rf = self.recent_failed
-        ri = self.recent_input
-        ro = self.recent_output
-        rr = self.recent_rejected
-        recent_fmt = ""
         
-        if ri != ro:
-            recent_fmt = f"{ri}>"
-
-        if rf > 0:
-            recent_fmt = f"{recent_fmt}{rf}F"
-        
-        if rr > 0:
-            recent_fmt = f"{recent_fmt}{rr}R"
-
-        recent_fmt = f"{recent_fmt}{ro}D"
-        
-        tf = self.total_failed
-        ti = self.total_input
-        to = self.total_output
-        tr = self.total_rejected
-        total_fmt = ""
-        
-        if ti != to:
-            total_fmt = f"{ti}>"
-        
-        if tf > 0:
-            total_fmt = f"{total_fmt}{tf}F"
-        
-        if tr > 0:
-            total_fmt = f"{total_fmt}{tr}R"
-
-        total_fmt = f"{total_fmt}{to}D"
+        # Format recent and total using TaskStats.format()
+        recent_fmt = self.recent.format()
+        total_fmt = self.total.format()
         
         # Format active items with relative paths
         active_str = ""

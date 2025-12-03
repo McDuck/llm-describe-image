@@ -101,50 +101,38 @@ class Task:
         a = len(self.active)
         m = self.maximum
         rf = self.recent_failed
-        tf = self.total_failed
         ri = self.recent_input
         ro = self.recent_output
+        rr = self.recent_rejected
+        recent_fmt = ""
+        
+        if ri != ro:
+            recent_fmt = f"{ri}>"
+
+        if rf > 0:
+            recent_fmt = f"{recent_fmt}{rf}F"
+        
+        if rr > 0:
+            recent_fmt = f"{recent_fmt}{rr}R"
+
+        recent_fmt = f"{recent_fmt}{ro}D"
+        
+        tf = self.total_failed
         ti = self.total_input
         to = self.total_output
-        rr = self.recent_rejected
         tr = self.total_rejected
+        total_fmt = ""
         
-        # Format recent: show input>output if different, else just count
-        if ri == ro:
-            recent_str = f"{ri}D"
-        else:
-            recent_str = f"{ri}>{ro}D"
+        if ti != to:
+            total_fmt = f"{ti}>"
         
-        # Add failed count if non-zero (for recent) - before R and D
-        if rf > 0:
-            recent_str = f"{rf}F{recent_str}"
-        
-        # Add rejected count if non-zero (for recent) - before D but after F
-        if rr > 0:
-            # Insert R before the D
-            if 'D' in recent_str:
-                recent_str = recent_str.replace('D', f'{rr}R', 1).replace(f'{rr}R', f'{rr}RD', 1)[:-1]
-                # Simpler: insert before last character (D)
-                recent_str = recent_str[:-1] + f"{rr}R" + recent_str[-1]
-        
-        recent_fmt = recent_str
-        
-        # Format total: show input>output if different, else just count
-        if ti == to:
-            total_str = f"{ti}D"
-        else:
-            total_str = f"{ti}>{to}D"
-        
-        # Add failed count if non-zero (for total) - before R and D
         if tf > 0:
-            total_str = f"{tf}F{total_str}"
+            total_fmt = f"{total_fmt}{tf}F"
         
-        # Add rejected count if non-zero (for total) - before D but after F
         if tr > 0:
-            # Insert R before the D
-            total_str = total_str[:-1] + f"{tr}R" + total_str[-1]
-        
-        total_fmt = total_str
+            total_fmt = f"{total_fmt}{tr}R"
+
+        total_fmt = f"{total_fmt}{to}D"
         
         # Format active items with relative paths
         active_str = ""

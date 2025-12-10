@@ -54,6 +54,9 @@ NUM_WRITE_THREADS: int = int(os.getenv("NUM_WRITE_THREADS", "1"))
 # Backpressure multiplier: allow queue to grow to (max * multiplier) before stopping upstream work
 BACKPRESSURE_MULTIPLIER: float = float(os.getenv("BACKPRESSURE_MULTIPLIER", "2.0"))
 
+# Retry failed items: if False, skip files with .error.txt files
+RETRY_FAILED: bool = os.getenv("RETRY_FAILED", "false").lower() in ("true", "1", "yes")
+
 # Global state
 stop_event: threading.Event = threading.Event()
 status_lock: threading.Lock = threading.Lock()  # Coordinate status printing and queue updates
@@ -253,6 +256,15 @@ def worker_thread(
                         next_task.add(result)
                         
             except Exception as e:
+                # If there's a next task, pass the error to it (for WriteTask to handle)
+                # Otherwise just mark as failed
+                if next_task is not None:
+                    # Extract input path from item
+                    if isinstance(item, tuple) and len(item) >= 1:
+                        input_path = item[0]
+                        # Pass error to next task (WriteTask will write .error.txt)
+                        next_task.add((input_path, e))
+                
                 task.fail(item)
     finally:
         # Unload resources at thread end
@@ -306,6 +318,7 @@ def main() -> None:
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument("--sort-order", help="Sort order (natural-desc, natural-asc, name-desc, name-asc)")
     parser.add_argument("--status-interval", type=float, default=5.0, help="Status update interval in seconds")
+    parser.add_argument("--retry-failed", action="store_true", help="Retry previously failed items (default: skip .error.txt files)")
     
     args = parser.parse_args()
     
@@ -317,6 +330,7 @@ def main() -> None:
     OUTPUT_DIR = args.output_dir or args.output_dir_flag or INPUT_DIR
     
     VERBOSE = args.verbose
+    retry_failed: bool = args.retry_failed or RETRY_FAILED
     model_name: str = args.model or MODEL_NAME or "qwen/qwen3-vl-8b"
     sort_order: str = args.sort_order or SORT_ORDER
     
@@ -352,7 +366,8 @@ def main() -> None:
     skip_check_task: Task = skip_check_mod.SkipCheckTask(
         maximum=NUM_SKIP_CHECKER_THREADS,
         input_dir=INPUT_DIR,
-        output_dir=OUTPUT_DIR
+        output_dir=OUTPUT_DIR,
+        retry_failed=retry_failed
     )
     
     download_task: Task = download_mod.DownloadTask(

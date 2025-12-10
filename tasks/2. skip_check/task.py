@@ -6,15 +6,16 @@ from tasks.task import Task
 
 
 class SkipCheckTask(Task[str, Tuple[bool, str]]):
-    def __init__(self, maximum: int = 100, input_dir: Optional[str] = None, output_dir: Optional[str] = None) -> None:
+    def __init__(self, maximum: int = 100, input_dir: Optional[str] = None, output_dir: Optional[str] = None, retry_failed: bool = False) -> None:
         super().__init__(maximum, input_dir=input_dir)
         self.output_dir: Optional[str] = output_dir
+        self.retry_failed: bool = retry_failed
 
     def execute(self, input_path: str) -> Tuple[bool, str]:
         """
-        Check if output file already exists.
+        Check if output file already exists or if file previously failed.
         Returns: (should_skip, input_path)
-        - True if file should be skipped (already exists)
+        - True if file should be skipped (already exists or previously failed)
         - False if file needs processing
         """
         try:
@@ -22,14 +23,20 @@ class SkipCheckTask(Task[str, Tuple[bool, str]]):
             if self.input_dir and self.output_dir:
                 relative = os.path.relpath(input_path, self.input_dir)
                 output_file = os.path.join(self.output_dir, relative + ".txt")
+                error_file = os.path.join(self.output_dir, relative + ".error.txt")
             else:
                 output_file = input_path + ".txt"
+                error_file = input_path + ".error.txt"
             
             # Check if output exists
             if os.path.exists(output_file):
-                return (True, input_path)  # Skip
-            else:
-                return (False, input_path)  # Process
+                return (True, input_path)  # Skip - already processed
+            
+            # Check if error file exists and retry_failed is False
+            if not self.retry_failed and os.path.exists(error_file):
+                return (True, input_path)  # Skip - previously failed
+            
+            return (False, input_path)  # Process
                 
         except Exception as e:
             # Show relative path in error

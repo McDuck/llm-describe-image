@@ -1,8 +1,9 @@
 import os
 import sys
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple, TYPE_CHECKING, Dict, Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from tasks.task import Task
+from tasks.metadata_extractor import get_image_metadata
 
 # Import from LLM task's llms directory
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '4. llm'))
@@ -17,23 +18,26 @@ else:
     except ImportError:
         from typing import Any as FileHandle  # Fallback if lmstudio not installed
 
-class DownloadTask(Task[str, Tuple[str, FileHandle]]):
+class DownloadTask(Task[str, Tuple[str, FileHandle, Dict[str, Any]]]):
     def __init__(self, maximum: int = 2, backend_name: Optional[str] = None, input_dir: Optional[str] = None) -> None:
         super().__init__(maximum, input_dir=input_dir)
         self.backend: LLMBackend = get_backend(backend_name)
 
-    def execute(self, input_path: str) -> Tuple[str, FileHandle]:
+    def execute(self, input_path: str) -> Tuple[str, FileHandle, Dict[str, Any]]:
         """
-        Prepare/download image for LLM processing.
-        Returns: (input_path, image_handle)
+        Prepare/download image for LLM processing and extract metadata.
+        Returns: (input_path, image_handle, metadata)
         """
         try:
             if not self.backend:
                 raise Exception("Backend not configured")
             
+            # Extract metadata from image
+            metadata: Dict[str, Any] = get_image_metadata(input_path)
+            
             # Use backend to prepare image
             image_handle: FileHandle = self.backend.prepare_image(input_path)
-            return (input_path, image_handle)
+            return (input_path, image_handle, metadata)
             
         except Exception as e:
             # Show relative path in error

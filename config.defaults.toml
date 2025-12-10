@@ -1,0 +1,49 @@
+# Default configuration values for llm-describe-image
+# These defaults are used when environment variables or command-line arguments are not provided.
+
+[directories]
+# Directory configuration
+input_dir = ""  # Required - no default
+output_dir = ""  # Will use INPUT_DIR if not set
+
+[image]
+# Image processing
+extensions = [".jpg", ".jpeg", ".png", ".webp"]
+
+[model]
+# Model configuration
+name = "qwen/qwen3-vl-8b"
+backend = "lmstudio"
+# Prompt template with placeholders: {filename}, {datetime}, {location}, {camera}, {focal_length}, {aperture}, {iso}, {shutter_speed}
+prompt = "Context:\nFile name: {filename}\nDatumtijd: {datetime}\nLocatie: {location}\nCamera: {camera}\n\nOpdracht: Beschrijf de foto in het Nederlands."
+
+[sorting]
+# Sort order: natural-desc, natural-asc, name-desc, name-asc
+order = "natural-desc"
+
+[threads]
+# Thread counts for each pipeline stage
+discover = 100
+skip_checker = 100
+download = 2
+llm = 1
+write = 1
+
+[performance]
+# Backpressure control: allow queue to grow to (max * multiplier) before stopping upstream work
+backpressure_multiplier = 2.0
+
+[retry]
+# Retry previously failed items (files with .error.txt)
+failed = false
+
+[output]
+# Output format template
+# Available placeholders: {datetime}, {location}, {content}, {filename}
+format = "Datum tijd: {datetime}\nLocatie: {location}\Beschrijving:\n{content}"
+
+[ui]
+# Status update interval (seconds)
+status_interval = 5.0
+# Verbose output
+verbose = false

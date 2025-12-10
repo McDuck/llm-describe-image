@@ -4,6 +4,7 @@ import os
 class TaskStats:
     """Statistics for a task including input/output counts, failures, and rejections."""
     def __init__(self):
+        self.diff_input_output = False
         self.done = 0
         self.failed = 0
         self.input = 0
@@ -22,6 +23,8 @@ class TaskStats:
         """Record a finished item with output count."""
         self.done += 1
         self.input += 1
+        if (output_count != 1):
+            self.diff_input_output = True
         self.output += output_count
     
     def fail(self):
@@ -37,7 +40,7 @@ class TaskStats:
     def format(self):
         """Format stats as string: [input>][failed F][rejected R]output D"""
         fmt = ""
-        if self.input != self.output:
+        if self.diff_input_output:
             fmt = f"{self.input}>"
         if self.failed > 0:
             fmt = f"{fmt}{self.failed}F"

@@ -33,8 +33,7 @@ class WriteTask(Task[Tuple[str, Union[str, Exception]], str]):
             try:
                 os.makedirs(os.path.dirname(error_file), exist_ok=True)
                 with open(error_file, "w", encoding="utf-8") as f:
-                    f.write(f"Error processing {input_path}\n")
-                    f.write(f"Error: {str(content_or_error)}\n")
+                    f.write(f"{str(content_or_error)}\n")
                 return error_file
             except Exception as e:
                 # Show relative path in error

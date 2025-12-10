@@ -10,6 +10,8 @@ import time
 import threading
 import argparse
 from datetime import datetime
+from typing import Optional, Dict, List, Callable, Tuple, Any, Set
+from types import ModuleType
 
 try:
     from dotenv import load_dotenv
@@ -22,7 +24,7 @@ from tasks.task import Task
 import importlib.util
 
 # Load task modules dynamically
-def load_task(task_dir):
+def load_task(task_dir: str) -> Optional[ModuleType]:
     """Load task.py from a task directory."""
     task_file = os.path.join(task_dir, "task.py")
     if not os.path.exists(task_file):
@@ -35,40 +37,40 @@ def load_task(task_dir):
 
 
 # --- CONFIG ---
-INPUT_DIR = os.getenv("INPUT_DIR")
-OUTPUT_DIR = os.getenv("OUTPUT_DIR")
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
-MODEL_NAME = os.getenv("MODEL_NAME")
-SORT_ORDER = os.getenv("SORT_ORDER", "natural-desc")
-VERBOSE = False
+INPUT_DIR: Optional[str] = os.getenv("INPUT_DIR")
+OUTPUT_DIR: Optional[str] = os.getenv("OUTPUT_DIR")
+IMAGE_EXTENSIONS: Set[str] = {".jpg", ".jpeg", ".png", ".webp"}
+MODEL_NAME: Optional[str] = os.getenv("MODEL_NAME")
+SORT_ORDER: str = os.getenv("SORT_ORDER", "natural-desc")
+VERBOSE: bool = False
 
 # Thread counts
-NUM_DISCOVER_THREADS = int(os.getenv("NUM_DISCOVER_THREADS", "100"))
-NUM_SKIP_CHECKER_THREADS = int(os.getenv("NUM_SKIP_CHECKER_THREADS", "100"))
-NUM_DOWNLOAD_THREADS = int(os.getenv("NUM_DOWNLOAD_THREADS", "2"))
-NUM_LLM_THREADS = int(os.getenv("NUM_LLM_THREADS", "1"))
-NUM_WRITE_THREADS = int(os.getenv("NUM_WRITE_THREADS", "1"))
+NUM_DISCOVER_THREADS: int = int(os.getenv("NUM_DISCOVER_THREADS", "100"))
+NUM_SKIP_CHECKER_THREADS: int = int(os.getenv("NUM_SKIP_CHECKER_THREADS", "100"))
+NUM_DOWNLOAD_THREADS: int = int(os.getenv("NUM_DOWNLOAD_THREADS", "2"))
+NUM_LLM_THREADS: int = int(os.getenv("NUM_LLM_THREADS", "1"))
+NUM_WRITE_THREADS: int = int(os.getenv("NUM_WRITE_THREADS", "1"))
 
 # Backpressure multiplier: allow queue to grow to (max * multiplier) before stopping upstream work
-BACKPRESSURE_MULTIPLIER = float(os.getenv("BACKPRESSURE_MULTIPLIER", "2.0"))
+BACKPRESSURE_MULTIPLIER: float = float(os.getenv("BACKPRESSURE_MULTIPLIER", "2.0"))
 
 # Global state
-stop_event = threading.Event()
-status_lock = threading.Lock()  # Coordinate status printing and queue updates
-task_completed_items = {}  # Track completed items per task for verbose output
+stop_event: threading.Event = threading.Event()
+status_lock: threading.Lock = threading.Lock()  # Coordinate status printing and queue updates
+task_completed_items: Dict[str, List[Tuple[Any, Optional[List[Any]]]]] = {}  # Track completed items per task for verbose output
 
-def signal_handler(sig, frame):
+def signal_handler(sig: int, frame: Any) -> None:
     """Handle Ctrl+C gracefully."""
     print("\nRecieved SIGINT. Stopping...")
     stop_event.set()
 
 
-def format_and_print_status(tasks, include_verbose=False):
+def format_and_print_status(tasks: Dict[str, Task], include_verbose: bool = False) -> None:
     """Format and print the status line with optional verbose output."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     # Build status line using each task's format_status method
-    parts = []
+    parts: List[str] = []
     for name, task in tasks.items():
         status_str = task.format_status(name)
         parts.append(status_str)
@@ -78,13 +80,14 @@ def format_and_print_status(tasks, include_verbose=False):
     
     # Append verbose output if enabled
     if include_verbose and VERBOSE and task_completed_items:
-        verbose_parts = []
+        verbose_parts: List[str] = []
         for task_name, items in task_completed_items.items():
             if items:
                 # Get the last completed item
                 item, outputs = items[-1]
                 
                 # Extract path from item (could be string or tuple)
+                item_path: Any
                 if isinstance(item, tuple):
                     # For tasks like Download/LLM that pass (path, handle/content)
                     item_path = item[0]
@@ -92,6 +95,7 @@ def format_and_print_status(tasks, include_verbose=False):
                     item_path = item
                 
                 # Format item path relative to input dir
+                rel_path: str
                 if INPUT_DIR and isinstance(item_path, str):
                     try:
                         # Handle both regular and UNC paths
@@ -108,7 +112,7 @@ def format_and_print_status(tasks, include_verbose=False):
                 # Format outputs if present
                 if outputs:
                     # Get output names (relative paths or basenames depending on task)
-                    output_names = []
+                    output_names: List[str] = []
                     for out in outputs[:3]:  # Show first 3
                         if isinstance(out, str):
                             # For Write task, show relative path from OUTPUT_DIR
@@ -121,6 +125,7 @@ def format_and_print_status(tasks, include_verbose=False):
                                 # For other tasks (Discover), show basename
                                 output_names.append(os.path.basename(out))
                     
+                    output_str: Optional[str]
                     if len(outputs) > 3:
                         output_str = ", ".join(output_names) + ", ..."
                     elif output_names:
@@ -141,7 +146,14 @@ def format_and_print_status(tasks, include_verbose=False):
     print(status_line)
 
 
-def worker_thread(task, next_task=None, transform=None, check_rejection=None, has_pending_queue=False, tasks=None):
+def worker_thread(
+    task: Task,
+    next_task: Optional[Task] = None,
+    transform: Optional[Callable[[Any], Any]] = None,
+    check_rejection: Optional[Callable[[Any], bool]] = None,
+    has_pending_queue: bool = False,
+    tasks: Optional[Dict[str, Task]] = None
+) -> None:
     """
     Generic worker thread that processes items from a task queue.
     
@@ -178,8 +190,8 @@ def worker_thread(task, next_task=None, transform=None, check_rejection=None, ha
                     task.reject(item)
                 else:
                     # Calculate output count
-                    output_count = 0
-                    pending_items = []
+                    output_count: int = 0
+                    pending_items: List[Any] = []
                     
                     # Special handling for tasks with pending queue (e.g., DiscoverTask)
                     if has_pending_queue and isinstance(result, tuple) and len(result) == 2:
@@ -250,7 +262,7 @@ def worker_thread(task, next_task=None, transform=None, check_rejection=None, ha
             pass
 
 
-def status_printer(tasks, interval=5.0):
+def status_printer(tasks: Dict[str, Task], interval: float = 5.0) -> None:
     """Print periodic status updates."""
     while not stop_event.is_set():
         # Acquire lock to get consistent snapshot and flush pending queues
@@ -275,7 +287,7 @@ def status_printer(tasks, interval=5.0):
         time.sleep(interval)
 
 
-def main():
+def main() -> None:
     # Setup signal handler
     import signal as sig
     sig.signal(sig.SIGINT, signal_handler)
@@ -305,11 +317,11 @@ def main():
     OUTPUT_DIR = args.output_dir or args.output_dir_flag or INPUT_DIR
     
     VERBOSE = args.verbose
-    model_name = args.model or MODEL_NAME or "qwen/qwen3-vl-8b"
-    sort_order = args.sort_order or SORT_ORDER
+    model_name: str = args.model or MODEL_NAME or "qwen/qwen3-vl-8b"
+    sort_order: str = args.sort_order or SORT_ORDER
     
     # Load prompt
-    prompt_text = args.prompt or os.getenv("PROMPT", "Beschrijf de foto in het Nederlands")
+    prompt_text: str = args.prompt or os.getenv("PROMPT", "Beschrijf de foto in het Nederlands")
     if args.prompt_file:
         with open(args.prompt_file, "r", encoding="utf-8") as f:
             prompt_text = f.read().strip()
@@ -322,34 +334,34 @@ def main():
     print(f"Threads: skip={NUM_SKIP_CHECKER_THREADS}, download={NUM_DOWNLOAD_THREADS}, llm={NUM_LLM_THREADS}, write={NUM_WRITE_THREADS}")
     
     # Load task modules
-    tasks_dir = os.path.join(os.path.dirname(__file__), "tasks")
-    discover_mod = load_task(os.path.join(tasks_dir, "1. discover"))
-    skip_check_mod = load_task(os.path.join(tasks_dir, "2. skip_check"))
-    download_mod = load_task(os.path.join(tasks_dir, "3. download"))
-    llm_mod = load_task(os.path.join(tasks_dir, "4. llm"))
-    write_mod = load_task(os.path.join(tasks_dir, "5. write"))
+    tasks_dir: str = os.path.join(os.path.dirname(__file__), "tasks")
+    discover_mod: Optional[ModuleType] = load_task(os.path.join(tasks_dir, "1. discover"))
+    skip_check_mod: Optional[ModuleType] = load_task(os.path.join(tasks_dir, "2. skip_check"))
+    download_mod: Optional[ModuleType] = load_task(os.path.join(tasks_dir, "3. download"))
+    llm_mod: Optional[ModuleType] = load_task(os.path.join(tasks_dir, "4. llm"))
+    write_mod: Optional[ModuleType] = load_task(os.path.join(tasks_dir, "5. write"))
     
     # Create task instances
-    discover_task = discover_mod.DiscoverTask(
+    discover_task: Task = discover_mod.DiscoverTask(
         maximum=NUM_DISCOVER_THREADS,
         input_dir=INPUT_DIR,
         image_extensions=IMAGE_EXTENSIONS,
         sort_order=sort_order
     )
     
-    skip_check_task = skip_check_mod.SkipCheckTask(
+    skip_check_task: Task = skip_check_mod.SkipCheckTask(
         maximum=NUM_SKIP_CHECKER_THREADS,
         input_dir=INPUT_DIR,
         output_dir=OUTPUT_DIR
     )
     
-    download_task = download_mod.DownloadTask(
+    download_task: Task = download_mod.DownloadTask(
         maximum=NUM_DOWNLOAD_THREADS,
         backend_name=os.getenv("BACKEND"),
         input_dir=INPUT_DIR
     )
     
-    llm_task = llm_mod.LLMTask(
+    llm_task: Task = llm_mod.LLMTask(
         maximum=NUM_LLM_THREADS,
         model_name=model_name,
         prompt=prompt_text,
@@ -357,7 +369,7 @@ def main():
         input_dir=INPUT_DIR
     )
     
-    write_task = write_mod.WriteTask(
+    write_task: Task = write_mod.WriteTask(
         maximum=NUM_WRITE_THREADS,
         input_dir=INPUT_DIR,
         output_dir=OUTPUT_DIR
@@ -367,7 +379,7 @@ def main():
     discover_task.add(INPUT_DIR)
     
     # Build task dictionary for status
-    tasks = {
+    tasks: Dict[str, Task] = {
         "Discover": discover_task,
         "SkipCheck": skip_check_task,
         "Download": download_task,
@@ -376,7 +388,7 @@ def main():
     }
     
     # Start status printer
-    status_thread = threading.Thread(
+    status_thread: threading.Thread = threading.Thread(
         name="Status",
         target=status_printer,
         args=(tasks, args.status_interval),
@@ -385,25 +397,25 @@ def main():
     status_thread.start()
     
     # Start worker threads
-    threads = []
+    threads: List[threading.Thread] = []
     
     # Discover -> SkipCheck (discovers list of files)
     for _ in range(1):
         t = threading.Thread(
             name="Discover",
             target=worker_thread,
-            args=(discover_task, skip_check_task, None, None, True, tasks),  # has_pending_queue=True, tasks
+            args=(discover_task, skip_check_task, None, None, True, tasks),
             daemon=True
         )
         t.start()
         threads.append(t)
     
     # SkipCheck -> Download (reject skipped files)
-    def check_skip_rejection(result):
+    def check_skip_rejection(result: Tuple[bool, str]) -> bool:
         should_skip, path = result
         return should_skip
     
-    def skip_transform(result):
+    def skip_transform(result: Tuple[bool, str]) -> str:
         should_skip, path = result
         return path
     

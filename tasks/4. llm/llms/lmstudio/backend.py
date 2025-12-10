@@ -5,6 +5,7 @@ import time
 from typing import Any, Optional
 
 import lmstudio as lms
+from lmstudio import FileHandle
 
 from llms.base import LLMBackend
 
@@ -75,10 +76,10 @@ class LMStudioBackend(LLMBackend):
                 return None
         return None
 
-    def prepare_image(self, path: str) -> Any:
+    def prepare_image(self, path: str) -> FileHandle:
         return lms.prepare_image(path)
 
-    def respond(self, model: Any, prompt: str, image_handle: Any) -> str:
+    def respond(self, model: Any, prompt: str, image_handle: FileHandle) -> str:
         chat = lms.Chat()
         chat.add_user_message(prompt, images=[image_handle])
         result = model.respond(chat)

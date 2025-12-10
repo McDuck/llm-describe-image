@@ -1,17 +1,21 @@
 import os
+from typing import Optional, List, Any, TypeVar, Generic
+
+InputType = TypeVar('InputType')
+OutputType = TypeVar('OutputType')
 
 
 class TaskStats:
     """Statistics for a task including input/output counts, failures, and rejections."""
-    def __init__(self):
-        self.diff_input_output = False
-        self.done = 0
-        self.failed = 0
-        self.input = 0
-        self.output = 0
-        self.rejected = 0
+    def __init__(self) -> None:
+        self.diff_input_output: bool = False
+        self.done: int = 0
+        self.failed: int = 0
+        self.input: int = 0
+        self.output: int = 0
+        self.rejected: int = 0
     
-    def reset(self):
+    def reset(self) -> None:
         """Reset all counters to zero."""
         self.done = 0
         self.failed = 0
@@ -19,7 +23,7 @@ class TaskStats:
         self.output = 0
         self.rejected = 0
     
-    def finish(self, output_count=1):
+    def finish(self, output_count: int = 1) -> None:
         """Record a finished item with output count."""
         self.done += 1
         self.input += 1
@@ -27,17 +31,17 @@ class TaskStats:
             self.diff_input_output = True
         self.output += output_count
     
-    def fail(self):
+    def fail(self) -> None:
         """Record a failed item."""
         self.failed += 1
         self.input += 1
     
-    def reject(self):
+    def reject(self) -> None:
         """Record a rejected item."""
         self.rejected += 1
         self.input += 1
     
-    def format(self):
+    def format(self) -> str:
         """Format stats as string: [input>][failed F][rejected R]output D"""
         fmt = ""
         if self.diff_input_output:
@@ -50,34 +54,34 @@ class TaskStats:
         return fmt
 
 
-class Task:
-    def __init__(self, maximum=1, input_dir=None):
-        self.queue = []          # items waiting
-        self.active = []         # items processing
-        self.maximum = maximum   # max active allowed
-        self.input_dir = input_dir  # for relative path display
+class Task(Generic[InputType, OutputType]):
+    def __init__(self, maximum: int = 1, input_dir: Optional[str] = None) -> None:
+        self.queue: List[InputType] = []          # items waiting
+        self.active: List[InputType] = []         # items processing
+        self.maximum: int = maximum   # max active allowed
+        self.input_dir: Optional[str] = input_dir  # for relative path display
 
         # Stats objects
-        self.recent = TaskStats()
-        self.total = TaskStats()
+        self.recent: TaskStats = TaskStats()
+        self.total: TaskStats = TaskStats()
 
     # --- Lifecycle Methods ---------------------------------------------------
     
-    def load(self):
+    def load(self) -> None:
         """Load resources at worker thread start. Override in subclasses if needed."""
         pass
     
-    def unload(self):
+    def unload(self) -> None:
         """Unload resources at worker thread end. Override in subclasses if needed."""
         pass
 
     # --- Queue Management ----------------------------------------------------
 
-    def add(self, item):
+    def add(self, item: InputType) -> None:
         """Add an item to the queue."""
         self.queue.append(item)
 
-    def start_next(self, next_task=None, backpressure_multiplier=2.0):
+    def start_next(self, next_task: Optional['Task[InputType, OutputType]'] = None, backpressure_multiplier: float = 2.0) -> Optional[InputType]:
         """
         Move next item from queue to active
         and return it if capacity allows.
@@ -102,52 +106,53 @@ class Task:
         self.active.append(item)
         return item
 
-    def finish(self, item, output_count=1):
+    def finish(self, item: InputType, output_count: int = 1) -> None:
         """Mark as done with output count."""
         if item in self.active:
             self.active.remove(item)
         self.recent.finish(output_count)
         self.total.finish(output_count)
 
-    def fail(self, item):
+    def fail(self, item: InputType) -> None:
         """Mark as failed."""
         if item in self.active:
             self.active.remove(item)
         self.recent.fail()
         self.total.fail()
 
-    def reject(self, item):
+    def reject(self, item: InputType) -> None:
         """Mark as rejected (e.g., skipped)."""
         if item in self.active:
             self.active.remove(item)
         self.recent.reject()
         self.total.reject()
 
-    def reset_recent(self):
+    def reset_recent(self) -> None:
         """Reset recent counters."""
         self.recent.reset()
 
-    def format_status(self, name):
+    def format_status(self, name: str) -> str:
         """Format status string with input>output when different, relative paths for active items."""
-        q = len(self.queue)
+        q: int = len(self.queue)
         
         # Include pending_queue in queue count for accurate display
         if hasattr(self, 'pending_queue'):
             q += len(self.pending_queue)
         
-        a = len(self.active)
-        m = self.maximum
+        a: int = len(self.active)
+        m: int = self.maximum
         
         # Format recent and total using TaskStats.format()
-        recent_fmt = self.recent.format()
-        total_fmt = self.total.format()
+        recent_fmt: str = self.recent.format()
+        total_fmt: str = self.total.format()
         
         # Format active items with relative paths
-        active_str = ""
+        active_str: str = ""
         if a > 0 and self.active:
-            active_items = []
+            active_items: List[str] = []
             for item in self.active[:2]:
                 # Extract path from item (could be string or tuple)
+                item_str: str
                 if isinstance(item, tuple):
                     # For tasks like Download/LLM that pass (path, handle/content)
                     item_str = str(item[0])

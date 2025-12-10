@@ -1,5 +1,6 @@
 import os
 import sys
+from typing import Optional, Tuple, TYPE_CHECKING, Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # Add local llms directory to path
@@ -7,18 +8,27 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from tasks.task import Task
 from llms import get_backend
+from llms.base import LLMBackend
+
+if TYPE_CHECKING:
+    from lmstudio import FileHandle
+else:
+    try:
+        from lmstudio import FileHandle
+    except ImportError:
+        from typing import Any as FileHandle  # Fallback if lmstudio not installed
 
 
-class LLMTask(Task):
-    def __init__(self, maximum=1, model_name=None, prompt=None, backend_name=None, input_dir=None):
+class LLMTask(Task[Tuple[str, FileHandle], Tuple[str, str]]):
+    def __init__(self, maximum: int = 1, model_name: Optional[str] = None, prompt: Optional[str] = None, backend_name: Optional[str] = None, input_dir: Optional[str] = None) -> None:
         super().__init__(maximum, input_dir=input_dir)
-        self.model_name = model_name
-        self.backend_name = backend_name
-        self.backend = None
-        self.model = None
-        self.prompt = prompt
+        self.model_name: Optional[str] = model_name
+        self.backend_name: Optional[str] = backend_name
+        self.backend: Optional[LLMBackend] = None
+        self.model: Any = None
+        self.prompt: Optional[str] = prompt
 
-    def load(self):
+    def load(self) -> None:
         """Load the model and backend. Called by worker thread at start."""
         self.backend = get_backend(self.backend_name)
         if self.backend:
@@ -27,7 +37,7 @@ class LLMTask(Task):
         if not self.model:
             raise Exception(f"Failed to load model: {self.model_name}")
     
-    def unload(self):
+    def unload(self) -> None:
         """Unload the model. Called by worker thread at end."""
         if self.backend and hasattr(self.backend, 'cleanup'):
             # Assuming model was loaded by script, not preloaded
@@ -39,7 +49,7 @@ class LLMTask(Task):
         self.model = None
         self.backend = None
 
-    def execute(self, item):
+    def execute(self, item: Tuple[str, FileHandle]) -> Tuple[str, str]:
         """
         Run LLM inference on image.
         Args: (input_path, image_handle)

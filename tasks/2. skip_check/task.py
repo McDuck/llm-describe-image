@@ -1,15 +1,16 @@
 import os
 import sys
+from typing import Optional, Tuple
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from tasks.task import Task
 
 
-class SkipCheckTask(Task):
-    def __init__(self, maximum=100, input_dir=None, output_dir=None):
+class SkipCheckTask(Task[str, Tuple[bool, str]]):
+    def __init__(self, maximum: int = 100, input_dir: Optional[str] = None, output_dir: Optional[str] = None) -> None:
         super().__init__(maximum, input_dir=input_dir)
-        self.output_dir = output_dir
+        self.output_dir: Optional[str] = output_dir
 
-    def execute(self, input_path):
+    def execute(self, input_path: str) -> Tuple[bool, str]:
         """
         Check if output file already exists.
         Returns: (should_skip, input_path)

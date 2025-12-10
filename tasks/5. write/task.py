@@ -1,15 +1,16 @@
 import os
 import sys
+from typing import Optional, Tuple
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from tasks.task import Task
 
 
-class WriteTask(Task):
-    def __init__(self, maximum=1, input_dir=None, output_dir=None):
+class WriteTask(Task[Tuple[str, str], str]):
+    def __init__(self, maximum: int = 1, input_dir: Optional[str] = None, output_dir: Optional[str] = None) -> None:
         super().__init__(maximum, input_dir=input_dir)
-        self.output_dir = output_dir
+        self.output_dir: Optional[str] = output_dir
 
-    def execute(self, item):
+    def execute(self, item: Tuple[str, str]) -> str:
         """
         Write LLM output to file.
         Args: (input_path, content)

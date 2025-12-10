@@ -1,6 +1,14 @@
 from __future__ import annotations
 import abc
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from lmstudio import FileHandle
+else:
+    try:
+        from lmstudio import FileHandle
+    except ImportError:
+        from typing import Any as FileHandle  # Fallback if lmstudio not installed
 
 class LLMBackend(abc.ABC):
     """Abstract interface for LLM backends used by the pipeline."""
@@ -18,12 +26,12 @@ class LLMBackend(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def prepare_image(self, path: str) -> Any:
+    def prepare_image(self, path: str) -> FileHandle:
         """Prepare image handle for inference."""
         raise NotImplementedError
 
     @abc.abstractmethod
-    def respond(self, model: Any, prompt: str, image_handle: Any) -> str:
+    def respond(self, model: Any, prompt: str, image_handle: FileHandle) -> str:
         """Run inference and return string content."""
         raise NotImplementedError
 

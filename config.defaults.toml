@@ -40,7 +40,7 @@ failed = false
 [output]
 # Output format template
 # Available placeholders: {datetime}, {location}, {content}, {filename}
-format = "Datum tijd: {datetime}\nLocatie: {location}\Beschrijving:\n{content}"
+format = "Datum tijd: {datetime}\nLocatie: {location}\nBeschrijving:\n{content}"
 
 [ui]
 # Status update interval (seconds)

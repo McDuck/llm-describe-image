@@ -27,12 +27,18 @@ class LLMTask(Task[Tuple[str, FileHandle, Dict[str, Any]], Tuple[str, str, Dict[
         self.backend: Optional[LLMBackend] = None
         self.model: Any = None
         self.prompt: Optional[str] = prompt
+        self.server_started_by_script: bool = False
+        self.model_loaded_by_script: bool = False
 
     def load(self) -> None:
         """Load the model and backend. Called by worker thread at start."""
         self.backend = get_backend(self.backend_name)
         if self.backend:
+            # Bootstrap the server to initialize SDK connection
+            self.server_started_by_script = self.backend.bootstrap_server(auto_start=True)
             self.model = self.backend.load_model(self.model_name, allow_cli_install=False)
+            if self.model:
+                self.model_loaded_by_script = True
         
         if not self.model:
             raise Exception(f"Failed to load model: {self.model_name}")
@@ -40,11 +46,10 @@ class LLMTask(Task[Tuple[str, FileHandle, Dict[str, Any]], Tuple[str, str, Dict[
     def unload(self) -> None:
         """Unload the model. Called by worker thread at end."""
         if self.backend and hasattr(self.backend, 'cleanup'):
-            # Assuming model was loaded by script, not preloaded
             self.backend.cleanup(
-                model_loaded_by_script=True,
+                model_loaded_by_script=self.model_loaded_by_script,
                 model_name=self.model_name,
-                server_started_by_script=False
+                server_started_by_script=self.server_started_by_script
             )
         self.model = None
         self.backend = None

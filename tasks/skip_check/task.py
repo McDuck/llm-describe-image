@@ -6,10 +6,18 @@ from tasks.task import Task
 
 
 class SkipCheckTask(Task[str, Tuple[bool, str]]):
-    def __init__(self, maximum: int = 100, input_dir: Optional[str] = None, output_dir: Optional[str] = None, retry_failed: bool = False) -> None:
+    def __init__(
+        self,
+        maximum: int = 100,
+        input_dir: Optional[str] = None,
+        output_dir: Optional[str] = None,
+        retry_failed: bool = False,
+        output_suffix: str = ".txt"
+    ) -> None:
         super().__init__(maximum, input_dir=input_dir)
         self.output_dir: Optional[str] = output_dir
         self.retry_failed: bool = retry_failed
+        self.output_suffix: str = output_suffix
 
     def execute(self, input_path: str) -> Tuple[bool, str]:
         """
@@ -22,11 +30,11 @@ class SkipCheckTask(Task[str, Tuple[bool, str]]):
             # Calculate output path
             if self.input_dir and self.output_dir:
                 relative = os.path.relpath(input_path, self.input_dir)
-                output_file = os.path.join(self.output_dir, relative + ".txt")
-                error_file = os.path.join(self.output_dir, relative + ".error.txt")
+                output_file = os.path.join(self.output_dir, relative + self.output_suffix)
+                error_file = os.path.join(self.output_dir, relative + self.output_suffix.replace(".txt", ".error.txt"))
             else:
-                output_file = input_path + ".txt"
-                error_file = input_path + ".error.txt"
+                output_file = input_path + self.output_suffix
+                error_file = input_path + self.output_suffix.replace(".txt", ".error.txt")
             
             # Check if output exists
             if os.path.exists(output_file):

@@ -31,8 +31,8 @@ class LLMBackend(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def respond(self, model: Any, prompt: str, image_handle: FileHandle) -> str:
-        """Run inference and return string content."""
+    def respond(self, model: Any, prompt: str, image_handle: Optional[FileHandle] = None) -> str:
+        """Run inference and return string content. Image is optional."""
         raise NotImplementedError
 
     @abc.abstractmethod

@@ -24,6 +24,7 @@ from config_loader import (
     DEFAULT_MODEL_NAME,
     DEFAULT_BACKEND,
     DEFAULT_PROMPT,
+    DEFAULT_OUTPUT_FORMAT,
     DEFAULT_SORT_ORDER,
     DEFAULT_NUM_DISCOVER_THREADS,
     DEFAULT_NUM_SKIP_CHECKER_THREADS,
@@ -32,8 +33,13 @@ from config_loader import (
     DEFAULT_NUM_WRITE_THREADS,
     DEFAULT_BACKPRESSURE_MULTIPLIER,
     DEFAULT_RETRY_FAILED,
-    DEFAULT_OUTPUT_FORMAT,
     DEFAULT_IMAGE_EXTENSIONS,
+    DEFAULT_PIPELINE_MODE,
+    DEFAULT_CONTEXT_MODEL_NAME,
+    DEFAULT_ENHANCEMENT_PROMPT,
+    DEFAULT_ENHANCEMENT_OUTPUT_FORMAT,
+    DEFAULT_CONTEXT_WINDOW_DAYS,
+    DEFAULT_MAX_CONTEXT_ITEMS,
 )
 
 # Import tasks
@@ -85,7 +91,8 @@ task_completed_items: Dict[str, List[Tuple[Any, Optional[List[Any]]]]] = {}  # T
 
 def signal_handler(sig: int, frame: Any) -> None:
     """Handle Ctrl+C gracefully."""
-    print("\nRecieved SIGINT. Stopping...")
+    print("\nReceived SIGINT. Stopping...")
+    global stop_event
     stop_event.set()
 
 
@@ -172,6 +179,10 @@ def format_and_print_status(tasks: Dict[str, Task], include_verbose: bool = Fals
 
 def worker_thread(
     task: Task,
+    stop_event: threading.Event,
+    status_lock: threading.Lock,
+    task_completed_items: Dict[str, List[Tuple[Any, Optional[List[Any]]]]],
+    backpressure_multiplier: float,
     next_task: Optional[Task] = None,
     transform: Optional[Callable[[Any], Any]] = None,
     check_rejection: Optional[Callable[[Any], bool]] = None,
@@ -183,6 +194,10 @@ def worker_thread(
     
     Args:
         task: Task instance to process
+        stop_event: Event to signal thread should stop
+        status_lock: Lock for coordinating status updates
+        task_completed_items: Dict tracking completed items for verbose output
+        backpressure_multiplier: Multiplier for backpressure calculation
         next_task: Optional next task to add results to
         transform: Optional function to transform results before adding to next_task
         check_rejection: Optional function to check if result should be rejected (returns True if rejected)
@@ -198,7 +213,7 @@ def worker_thread(
     try:
         while not stop_event.is_set():
             # Try to start next item (check downstream capacity with backpressure)
-            item = task.start_next(next_task, BACKPRESSURE_MULTIPLIER)
+            item = task.start_next(next_task, backpressure_multiplier)
             if item is None:
                 time.sleep(0.1)
                 continue
@@ -295,27 +310,32 @@ def worker_thread(
             pass
 
 
-def status_printer(tasks: Dict[str, Task], interval: float = 5.0) -> None:
+def status_printer(tasks: Dict[str, Task], stop_event: threading.Event, status_lock: threading.Lock, task_completed_items: Dict[str, List[Tuple[Any, Optional[List[Any]]]]], interval: float = 5.0) -> None:
     """Print periodic status updates."""
     while not stop_event.is_set():
-        # Acquire lock to get consistent snapshot and flush pending queues
-        with status_lock:
-            # Print status with verbose output
-            format_and_print_status(tasks, include_verbose=True)
-            
-            # Clear completed items after printing
-            task_completed_items.clear()
-            
-            # Reset recent counters after formatting
-            for task in tasks.values():
-                task.reset_recent()
-            
-            # Flush pending queue items AFTER printing status
-            for name, task in tasks.items():
-                if hasattr(task, 'pending_queue') and task.pending_queue:
-                    for item in task.pending_queue:
-                        task.add(item)
-                    task.pending_queue.clear()
+        try:
+            # Acquire lock to get consistent snapshot and flush pending queues
+            with status_lock:
+                # Print status with verbose output
+                format_and_print_status(tasks, include_verbose=True)
+                
+                # Clear completed items after printing
+                task_completed_items.clear()
+                
+                # Reset recent counters after formatting
+                for task in tasks.values():
+                    task.reset_recent()
+                
+                # Flush pending queue items AFTER printing status
+                for name, task in tasks.items():
+                    if hasattr(task, 'pending_queue') and task.pending_queue:
+                        for item in task.pending_queue:
+                            task.add(item)
+                        task.pending_queue.clear()
+        except Exception:
+            # Ignore errors during shutdown (e.g., stdout closed)
+            if stop_event.is_set():
+                break
         
         time.sleep(interval)
 
@@ -329,6 +349,7 @@ def main() -> None:
     
     # Parse arguments
     parser = argparse.ArgumentParser(description="Process images with LLM descriptions")
+    parser.add_argument("pipeline", choices=["describe-image", "enhance-by-context"], help="Pipeline to run")
     parser.add_argument("input_dir", nargs="?", help="Input directory")
     parser.add_argument("output_dir", nargs="?", help="Output directory")
     parser.add_argument("--input-dir", dest="input_dir_flag", help="Input directory")
@@ -340,6 +361,8 @@ def main() -> None:
     parser.add_argument("--sort-order", help="Sort order (natural-desc, natural-asc, name-desc, name-asc)")
     parser.add_argument("--status-interval", type=float, default=5.0, help="Status update interval in seconds")
     parser.add_argument("--retry-failed", action="store_true", help="Retry previously failed items (default: skip .error.txt files)")
+    parser.add_argument("--context-window-days", type=int, help="Days before/after for context (enhance-by-context pipeline)")
+    parser.add_argument("--context-model", help="Model for context enhancement (enhance-by-context pipeline)")
     
     args = parser.parse_args()
     
@@ -355,183 +378,47 @@ def main() -> None:
     model_name: str = args.model or MODEL_NAME or DEFAULT_MODEL_NAME
     sort_order: str = args.sort_order or SORT_ORDER
     
-    # Load prompt
-    prompt_text: str = args.prompt or os.getenv("PROMPT", DEFAULT_PROMPT)
-    if args.prompt_file:
-        with open(args.prompt_file, "r", encoding="utf-8") as f:
-            prompt_text = f.read().strip()
-    elif prompt_text.startswith("@"):
-        with open(prompt_text[1:], "r", encoding="utf-8") as f:
-            prompt_text = f.read().strip()
+    # Pipeline selection (now required argument)
+    pipeline_mode: str = args.pipeline
     
-    print(f"Using model: {model_name}")
-    print(f"Prompt source: {'file' if args.prompt_file or (prompt_text.startswith('@')) else 'inline'}")
-    print(f"Threads: skip={NUM_SKIP_CHECKER_THREADS}, download={NUM_DOWNLOAD_THREADS}, llm={NUM_LLM_THREADS}, write={NUM_WRITE_THREADS}")
+    print(f"Pipeline: {pipeline_mode}")
     
-    # Load task modules
-    tasks_dir: str = os.path.join(os.path.dirname(__file__), "tasks")
-    discover_mod: Optional[ModuleType] = load_task(os.path.join(tasks_dir, "1. discover"))
-    skip_check_mod: Optional[ModuleType] = load_task(os.path.join(tasks_dir, "2. skip_check"))
-    download_mod: Optional[ModuleType] = load_task(os.path.join(tasks_dir, "3. download"))
-    llm_mod: Optional[ModuleType] = load_task(os.path.join(tasks_dir, "4. llm"))
-    write_mod: Optional[ModuleType] = load_task(os.path.join(tasks_dir, "5. write"))
-    
-    # Create task instances
-    discover_task: Task = discover_mod.DiscoverTask(
-        maximum=NUM_DISCOVER_THREADS,
-        input_dir=INPUT_DIR,
-        image_extensions=IMAGE_EXTENSIONS,
-        sort_order=sort_order
-    )
-    
-    skip_check_task: Task = skip_check_mod.SkipCheckTask(
-        maximum=NUM_SKIP_CHECKER_THREADS,
-        input_dir=INPUT_DIR,
-        output_dir=OUTPUT_DIR,
-        retry_failed=retry_failed
-    )
-    
-    download_task: Task = download_mod.DownloadTask(
-        maximum=NUM_DOWNLOAD_THREADS,
-        backend_name=os.getenv("BACKEND"),
-        input_dir=INPUT_DIR
-    )
-    
-    llm_task: Task = llm_mod.LLMTask(
-        maximum=NUM_LLM_THREADS,
-        model_name=model_name,
-        prompt=prompt_text,
-        backend_name=os.getenv("BACKEND"),
-        input_dir=INPUT_DIR
-    )
-    
-    write_task: Task = write_mod.WriteTask(
-        maximum=NUM_WRITE_THREADS,
-        input_dir=INPUT_DIR,
-        output_dir=OUTPUT_DIR,
-        output_format=OUTPUT_FORMAT
-    )
-    
-    # Add root directory to discover queue
-    discover_task.add(INPUT_DIR)
-    
-    # Build task dictionary for status
-    tasks: Dict[str, Task] = {
-        "Discover": discover_task,
-        "SkipCheck": skip_check_task,
-        "Download": download_task,
-        "LLM": llm_task,
-        "Write": write_task
-    }
-    
-    # Start status printer
-    status_thread: threading.Thread = threading.Thread(
-        name="Status",
-        target=status_printer,
-        args=(tasks, args.status_interval),
-        daemon=True
-    )
-    status_thread.start()
-    
-    # Start worker threads
-    threads: List[threading.Thread] = []
-    
-    # Discover -> SkipCheck (discovers list of files)
-    for _ in range(1):
-        t = threading.Thread(
-            name="Discover",
-            target=worker_thread,
-            args=(discover_task, skip_check_task, None, None, True, tasks),
-            daemon=True
+    # Create and run pipeline
+    if pipeline_mode == "describe-image":
+        from pipelines.describe.pipeline import DescribeImagePipeline
+        pipeline = DescribeImagePipeline(
+            input_dir=INPUT_DIR,
+            output_dir=OUTPUT_DIR,
+            model_name=model_name,
+            sort_order=sort_order,
+            retry_failed=retry_failed,
+            args=args,
+            stop_event=stop_event,
+            status_lock=status_lock,
+            task_completed_items=task_completed_items,
+            backpressure_multiplier=BACKPRESSURE_MULTIPLIER,
+            image_extensions=IMAGE_EXTENSIONS
         )
-        t.start()
-        threads.append(t)
-    
-    # SkipCheck -> Download (reject skipped files)
-    def check_skip_rejection(result: Tuple[bool, str]) -> bool:
-        should_skip, path = result
-        return should_skip
-    
-    def skip_transform(result: Tuple[bool, str]) -> str:
-        should_skip, path = result
-        return path
-    
-    for _ in range(NUM_SKIP_CHECKER_THREADS):
-        t = threading.Thread(
-            name="SkipCheck",
-            target=worker_thread,
-            args=(skip_check_task, download_task, skip_transform, check_skip_rejection, False, tasks),
-            daemon=True
+    elif pipeline_mode == "enhance-by-context":
+        from pipelines.enhance.pipeline import EnhanceByContextPipeline
+        pipeline = EnhanceByContextPipeline(
+            input_dir=INPUT_DIR,
+            output_dir=OUTPUT_DIR,
+            model_name=model_name,
+            sort_order=sort_order,
+            retry_failed=retry_failed,
+            args=args,
+            stop_event=stop_event,
+            status_lock=status_lock,
+            task_completed_items=task_completed_items,
+            backpressure_multiplier=BACKPRESSURE_MULTIPLIER,
+            image_extensions=IMAGE_EXTENSIONS
         )
-        t.start()
-        threads.append(t)
-    
-    # Download -> LLM
-    for _ in range(NUM_DOWNLOAD_THREADS):
-        t = threading.Thread(
-            name="Download",
-            target=worker_thread,
-            args=(download_task, llm_task, None, None, False, tasks),
-            daemon=True
-        )
-        t.start()
-        threads.append(t)
-    
-    # LLM -> Write
-    for _ in range(NUM_LLM_THREADS):
-        t = threading.Thread(
-            name="LLM",
-            target=worker_thread,
-            args=(llm_task, write_task, None, None, False, tasks),
-            daemon=True
-        )
-        t.start()
-        threads.append(t)
-    
-    # Write (final stage)
-    for _ in range(NUM_WRITE_THREADS):
-        t = threading.Thread(
-            name="Write",
-            target=worker_thread,
-            args=(write_task, None, None, None, False, tasks),
-            daemon=True
-        )
-        t.start()
-        threads.append(t)
-    
-    # Wait for completion
-    while not stop_event.is_set():
-        # Check if all tasks are empty (including pending_queue)
-        with status_lock:
-            all_empty = all(
-                len(task.queue) == 0 and 
-                len(task.active) == 0 and
-                (not hasattr(task, 'pending_queue') or len(task.pending_queue) == 0)
-                for task in tasks.values()
-            )
+    else:
+        print(f"Error: Unknown pipeline mode '{pipeline_mode}'")
+        sys.exit(1)
         
-        if all_empty:
-            break
-        
-        time.sleep(0.5)
-    
-    # Wait for threads to finish (with timeout)
-    for t in threads:
-        t.join(timeout=2.0)
-    status_thread.join(timeout=1.0)
-
-    threads_alive = True
-    while threads_alive:
-        threads_alive = False
-        alive_threads = [t for t in threads if t.is_alive()]
-        if alive_threads:
-            print("Waiting for threads to finish...", ", ".join([t.name for t in alive_threads]));
-            time.sleep(2.0)
-    
-    print("\nDone. Final update:")
-    
-    # Print final stats
-    format_and_print_status(tasks, include_verbose=True)
+    pipeline.run()
 
 
 if __name__ == "__main__":

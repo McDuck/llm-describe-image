@@ -6,7 +6,7 @@ from tasks.task import Task
 from tasks.metadata_extractor import get_image_metadata
 
 # Import from LLM task's llms directory
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '4. llm'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'llm'))
 from llms import get_backend
 from llms.base import LLMBackend
 

@@ -79,9 +79,12 @@ class LMStudioBackend(LLMBackend):
     def prepare_image(self, path: str) -> FileHandle:
         return lms.prepare_image(path)
 
-    def respond(self, model: Any, prompt: str, image_handle: FileHandle) -> str:
+    def respond(self, model: Any, prompt: str, image_handle: Optional[FileHandle] = None) -> str:
         chat = lms.Chat()
-        chat.add_user_message(prompt, images=[image_handle])
+        if image_handle is not None:
+            chat.add_user_message(prompt, images=[image_handle])
+        else:
+            chat.add_user_message(prompt)
         result = model.respond(chat)
         content = getattr(result, "content", None)
         if content is None:

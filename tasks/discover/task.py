@@ -17,15 +17,27 @@ class DiscoverTask(Task[str, Tuple[List[str], List[str]]]):
         self.image_extensions: Set[str] = image_extensions or {".jpg", ".jpeg", ".png", ".webp"}
         self.sort_order: str = sort_order
         self.pending_queue: List[str] = []  # Items to add to queue after finish()
-        self._heap_queue: List[Tuple[int, int, str]]
+        self._heap_queue: List[Tuple[int, Any, int, str]]
         self.counter: int
     
     def add(self, item: str) -> None:
-        """Add item to priority queue with depth-based priority (deeper = higher priority)."""
+        """Add item to priority queue with depth and natural sort order."""
         depth: int = item.count(os.sep)  # Deeper paths have more separators
-        # Negate depth so deeper paths (higher depth) have lower values = higher priority
-        heapq.heappush(self._heap_queue, (-depth, self.counter, item))
+        
+        # Create natural sort key
+        sort_key = self._natural_key(item)
+        
+        # For desc order, negate numeric parts of the sort key
+        if self.sort_order.endswith("desc"):
+            sort_key = [(-k if isinstance(k, int) else k) for k in sort_key]
+        
+        # Priority: depth (negated for higher priority), sort key, counter (for stable sort)
+        heapq.heappush(self._heap_queue, (-depth, sort_key, self.counter, item))
         self.counter += 1
+    
+    def _natural_key(self, s: str) -> List[Any]:
+        """Convert a string into a list of mixed integers and strings for natural sorting."""
+        return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', s)]
     
     def start_next(self, next_task: Optional[Task] = None, backpressure_multiplier: float = 2.0) -> Optional[str]:
         """
@@ -48,7 +60,7 @@ class DiscoverTask(Task[str, Tuple[List[str], List[str]]]):
         
         # Pop from heap and activate
         if self._heap_queue:
-            _, _, item = heapq.heappop(self._heap_queue)
+            _, _, _, item = heapq.heappop(self._heap_queue)
             self.active.append(item)
             return item
         return None
@@ -56,7 +68,7 @@ class DiscoverTask(Task[str, Tuple[List[str], List[str]]]):
     @property
     def queue(self) -> List[str]:
         """Return list of items in queue for compatibility."""
-        return [item for _, _, item in self._heap_queue]
+        return [item for _, _, _, item in self._heap_queue]
     
     @queue.setter
     def queue(self, value: List[str]) -> None:
@@ -113,11 +125,8 @@ class DiscoverTask(Task[str, Tuple[List[str], List[str]]]):
                 dirs.append(entry_path)
         
         # Sort files
-        def _natural_key(s: str) -> List[Any]:
-            return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', s)]
-        
         if self.sort_order.startswith("natural"):
-            key_fn = _natural_key
+            key_fn = self._natural_key
         else:
             key_fn = lambda s: s.lower()
         

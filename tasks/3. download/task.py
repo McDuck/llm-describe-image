@@ -1,9 +1,12 @@
 import os
 import sys
 from typing import Optional, Tuple, Dict, Any
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+# Add tasks root to path for metadata_extractor in same directory
+sys.path.insert(0, os.path.dirname(__file__))
+
 from tasks.task import Task
-from tasks.metadata_extractor import get_image_metadata
+from metadata_extractor import get_image_metadata
 
 
 class DownloadTask(Task[str, Tuple[str, Dict[str, Any]]]):

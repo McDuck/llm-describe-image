@@ -6,10 +6,20 @@ from tasks.task import Task
 
 
 class WriteTask(Task[Tuple[str, Union[str, Exception], Optional[Dict[str, Any]]], str]):
-    def __init__(self, maximum: int = 1, input_dir: Optional[str] = None, output_dir: Optional[str] = None, output_format: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        maximum: int = 1,
+        input_dir: Optional[str] = None,
+        output_dir: Optional[str] = None,
+        output_format: Optional[str] = None,
+        output_suffix: str = ".txt",
+        error_suffix: str = ".error.txt"
+    ) -> None:
         super().__init__(maximum, input_dir=input_dir)
         self.output_dir: Optional[str] = output_dir
         self.output_format: str = output_format or "Date time: {datetime}\nLocation: {location}\nDescription:\n{content}"
+        self.output_suffix: str = output_suffix
+        self.error_suffix: str = error_suffix
 
     def execute(self, item: Tuple[str, Union[str, Exception], Optional[Dict[str, Any]]]) -> str:
         """
@@ -27,11 +37,11 @@ class WriteTask(Task[Tuple[str, Union[str, Exception], Optional[Dict[str, Any]]]
         # Calculate output paths
         if self.input_dir and self.output_dir:
             relative = os.path.relpath(input_path, self.input_dir)
-            output_file = os.path.join(self.output_dir, relative + ".txt")
-            error_file = os.path.join(self.output_dir, relative + ".error.txt")
+            output_file = os.path.join(self.output_dir, relative + self.output_suffix)
+            error_file = os.path.join(self.output_dir, relative + self.error_suffix)
         else:
-            output_file = input_path + ".txt"
-            error_file = input_path + ".error.txt"
+            output_file = input_path + self.output_suffix
+            error_file = input_path + self.error_suffix
         
         # Check if this is an error or success
         if isinstance(content_or_error, Exception):
@@ -75,12 +85,21 @@ class WriteTask(Task[Tuple[str, Union[str, Exception], Optional[Dict[str, Any]]]
                     filename_value = metadata['filename']
                 
                 # Format content using template
-                formatted_content = self.output_format.format(
-                    datetime=datetime_value,
-                    location=location_value,
-                    content=content_or_error,
-                    filename=filename_value
-                )
+                # Try to format with all available placeholders, falling back gracefully
+                try:
+                    formatted_content = self.output_format.format(
+                        datetime=datetime_value,
+                        location=location_value,
+                        content=content_or_error,
+                        filename=filename_value
+                    )
+                except KeyError:
+                    # If template doesn't have all placeholders, try with just content
+                    try:
+                        formatted_content = self.output_format.format(content=content_or_error)
+                    except KeyError:
+                        # If that fails too, just use the content as-is
+                        formatted_content = content_or_error
                 
                 # Write formatted content
                 with open(output_file, "w", encoding="utf-8") as f:

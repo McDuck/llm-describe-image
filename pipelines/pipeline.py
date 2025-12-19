@@ -19,7 +19,7 @@ class Pipeline:
         Initialize pipeline.
         
         Args:
-            name: Pipeline name (e.g., 'describe-image')
+            name: Pipeline name (e.g., 'describe')
             description: Pipeline description
         """
         self.name: str = name

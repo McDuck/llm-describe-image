@@ -118,9 +118,12 @@ class LMStudioBackend(LLMBackend):
                 # Re-raise if not a connection issue or final attempt
                 raise
 
-    def respond(self, model: Any, prompt: str, image_handle: FileHandle) -> str:
+    def respond(self, model: Any, prompt: str, image_handle: Optional[FileHandle] = None) -> str:
         chat = lms.Chat()
-        chat.add_user_message(prompt, images=[image_handle])
+        if image_handle is not None:
+            chat.add_user_message(prompt, images=[image_handle])
+        else:
+            chat.add_user_message(prompt)
         result = model.respond(chat)
         content = getattr(result, "content", None)
         if content is None:

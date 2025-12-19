@@ -20,7 +20,7 @@ from config_loader import (
 )
 
 
-class DescribeImagePipeline(Pipeline):
+class DescribePipeline(Pipeline):
     """Pipeline for describing images using LLM."""
     
     # Task configuration: define once, reuse for loading
@@ -28,7 +28,7 @@ class DescribeImagePipeline(Pipeline):
         {
             "name": "Discover",
             "class_name": "DiscoverTask",
-            "dir": "1. discover",
+            "dir": "discover",
             "kwargs_builder": lambda self: {
                 "maximum": self.num_discover_threads,
                 "input_dir": self.input_dir,
@@ -39,7 +39,7 @@ class DescribeImagePipeline(Pipeline):
         {
             "name": "SkipCheck",
             "class_name": "SkipCheckTask",
-            "dir": "2. skip_check",
+            "dir": "skip_check",
             "kwargs_builder": lambda self: {
                 "maximum": self.num_skip_checker_threads,
                 "input_dir": self.input_dir,
@@ -50,7 +50,7 @@ class DescribeImagePipeline(Pipeline):
         {
             "name": "Download",
             "class_name": "DownloadTask",
-            "dir": "3. download",
+            "dir": "download",
             "kwargs_builder": lambda self: {
                 "maximum": self.num_download_threads,
                 "input_dir": self.input_dir,
@@ -59,7 +59,7 @@ class DescribeImagePipeline(Pipeline):
         {
             "name": "LLM",
             "class_name": "LLMTask",
-            "dir": "4. llm",
+            "dir": "llm",
             "kwargs_builder": lambda self: {
                 "maximum": self.num_llm_threads,
                 "model_name": os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME),
@@ -71,7 +71,7 @@ class DescribeImagePipeline(Pipeline):
         {
             "name": "Write",
             "class_name": "WriteTask",
-            "dir": "5. write",
+            "dir": "write",
             "kwargs_builder": lambda self: {
                 "maximum": self.num_write_threads,
                 "input_dir": self.input_dir,
@@ -127,7 +127,7 @@ class DescribeImagePipeline(Pipeline):
     
     def __init__(self) -> None:
         super().__init__(
-            name="describe-image",
+            name="describe",
             description="Describes images using LLM (Discover → SkipCheck → Download → LLM → Write)"
         )
         

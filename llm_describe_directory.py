@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 CLI wrapper for the image description pipeline.
-Provides command-line interface to run the describe-image pipeline.
+Provides command-line interface to run image processing pipelines.
 """
 
 import os
@@ -18,6 +18,7 @@ except Exception:
 from config_loader import (
     DEFAULT_MODEL_NAME,
     DEFAULT_PROMPT,
+    DEFAULT_OUTPUT_FORMAT,
     DEFAULT_SORT_ORDER,
     DEFAULT_NUM_SKIP_CHECKER_THREADS,
     DEFAULT_NUM_DOWNLOAD_THREADS,

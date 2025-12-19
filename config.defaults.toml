@@ -12,10 +12,37 @@ extensions = [".jpg", ".jpeg", ".png", ".webp"]
 
 [model]
 # Model configuration
-name = "qwen/qwen3-vl-8b"
 backend = "lmstudio"
+
+[describe]
+# Describe-image pipeline settings
+model = "qwen/qwen3-vl-8b"
 # Prompt template with placeholders: {filename}, {datetime}, {location}, {camera}, {focal_length}, {aperture}, {iso}, {shutter_speed}
 prompt = "Context:\nFile name: {filename}\nDatumtijd: {datetime}\nLocatie: {location}\nCamera: {camera}\n\nOpdracht: Beschrijf de foto in het Nederlands."
+# Output format template for describe pipeline
+# Available placeholders: {datetime}, {location}, {content}, {filename}
+output_format = "Datum tijd: {datetime}\\nLocatie: {location}\\nBeschrijving:\\n{content}"
+
+[enhancement]
+# Context enhancement pipeline settings
+# Text-only models are typically better for enhancement tasks (faster, cheaper, more focused on language)
+# Good options: llama3, mistral, qwen2.5 (text models work well for refining existing descriptions)
+model = "qwen/qwen3-8b"
+# Context section template with placeholder: {items} (list of numbered context descriptions)
+context_template = "Context van andere foto's uit dezelfde periode/locatie:\\n\\n{items}\\n"
+# Single context item template with placeholders: {number}, {description}
+context_item_template = "{number}. {description}\\n"
+# Maximum characters per context item (longer items will be truncated)
+context_item_max_length = 10000
+# Maximum number of context items to include in prompt
+max_context_in_prompt = 100
+# Prompt template with placeholders: {context_section}, {original_description}
+prompt = "{context_section}Originele beschrijving van de huidige foto:\\n{original_description}\\n\\nVerbeter de beschrijving van de foto aan de hand van de context."
+context_window_days = 10  # Number of days before/after to look for context images
+max_context_items = 100  # Maximum number of context items to gather
+# Output format template for enhancement pipeline
+# Available placeholders: {datetime}, {location}, {content}, {filename}, {original_content}
+output_format = "Datum tijd: {datetime}\\nLocatie: {location}\\nVerbeterde beschrijving:\\n{content}"
 
 [sorting]
 # Sort order: natural-desc, natural-asc, name-desc, name-asc
@@ -28,6 +55,8 @@ skip_checker = 100
 download = 2
 llm = 1
 write = 1
+context = 2
+enhance = 1
 
 [performance]
 # Backpressure control: allow queue to grow to (max * multiplier) before stopping upstream work
@@ -47,3 +76,7 @@ format = "Datum tijd: {datetime}\nLocatie: {location}\nBeschrijving:\n{content}"
 status_interval = 5.0
 # Verbose output
 verbose = false
+
+[pipeline]
+# Pipeline to run: "describe-image" or "enhance-by-context"
+mode = "describe-image"

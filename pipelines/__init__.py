@@ -9,14 +9,17 @@ def get_pipeline(pipeline_name: str) -> Optional[Pipeline]:
     Get a pipeline by name.
     
     Args:
-        pipeline_name: Name of the pipeline (e.g., 'describe-image')
+        pipeline_name: Name of the pipeline (e.g., 'describe', 'enhance')
     
     Returns:
         Pipeline instance or None if not found
     """
-    if pipeline_name == "describe-image":
-        from pipelines.describe_image import DescribeImagePipeline
-        return DescribeImagePipeline()
+    if pipeline_name == "describe":
+        from pipelines.describe import DescribePipeline
+        return DescribePipeline()
+    elif pipeline_name == "enhance":
+        from pipelines.enhance import EnhanceByContextPipeline
+        return EnhanceByContextPipeline()
     
     return None
 
@@ -29,5 +32,6 @@ def list_pipelines() -> Dict[str, str]:
         Dictionary mapping pipeline names to descriptions
     """
     return {
-        "describe-image": "Describes images using LLM (Discover → SkipCheck → Download → LLM → Write)",
+        "describe": "Describes images using LLM (Discover → SkipCheck → Download → LLM → Write)",
+        "enhance": "Enhances descriptions using context from nearby images (Discover → SkipCheck → Context → Enhance → Write)",
     }

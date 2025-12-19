@@ -44,7 +44,8 @@ class DescribePipeline(Pipeline):
                 "maximum": self.num_skip_checker_threads,
                 "input_dir": self.input_dir,
                 "output_dir": self.output_dir,
-                "retry_failed": os.getenv("RETRY_FAILED", "false").lower() in ("true", "1", "yes") if os.getenv("RETRY_FAILED") else DEFAULT_RETRY_FAILED,
+                "skip_all": self.skip_all,
+                "retry_failed": self.retry_failed,
             }
         },
         {
@@ -144,3 +145,9 @@ class DescribePipeline(Pipeline):
         
         # Set backpressure multiplier
         self.backpressure_multiplier = DEFAULT_BACKPRESSURE_MULTIPLIER
+        
+        # Skip checking (retry all items)
+        self.skip_all: bool = False
+        
+        # Retry failed items
+        self.retry_failed: bool = False

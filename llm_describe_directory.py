@@ -52,7 +52,9 @@ def main() -> None:
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument("--sort-order", help="Sort order (natural-desc, natural-asc, name-desc, name-asc)")
     parser.add_argument("--status-interval", type=float, default=5.0, help="Status update interval in seconds")
+    parser.add_argument("--retry", action="store_true", help="Retry all items (redo everything)")
     parser.add_argument("--retry-failed", action="store_true", help="Retry previously failed items (default: skip .error.txt files)")
+    parser.add_argument("--debug", action="store_true", help="Debug mode: output raw LLM responses and input prompts")
     
     args = parser.parse_args()
     
@@ -100,6 +102,16 @@ def main() -> None:
         os.environ["PROMPT"] = prompt_text
     if args.retry_failed:
         os.environ["RETRY_FAILED"] = "true"
+    
+    # Set debug flag if applicable
+    if args.debug and hasattr(pipeline, 'debug'):
+        pipeline.debug = True
+    
+    # Set retry flags if applicable
+    if args.retry and hasattr(pipeline, 'skip_all'):
+        pipeline.skip_all = True
+    elif args.retry_failed and hasattr(pipeline, 'retry_failed'):
+        pipeline.retry_failed = True
     
     # Run the pipeline
     pipeline.run(

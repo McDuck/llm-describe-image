@@ -393,7 +393,6 @@ def main() -> None:
     
     download_task: Task = download_mod.DownloadTask(
         maximum=NUM_DOWNLOAD_THREADS,
-        backend_name=os.getenv("BACKEND"),
         input_dir=INPUT_DIR
     )
     

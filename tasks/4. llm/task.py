@@ -19,7 +19,7 @@ else:
         from typing import Any as FileHandle  # Fallback if lmstudio not installed
 
 
-class LLMTask(Task[Tuple[str, FileHandle, Dict[str, Any]], Tuple[str, str, Dict[str, Any]]]):
+class LLMTask(Task[Tuple[str, Dict[str, Any]], Tuple[str, str, Dict[str, Any]]]):
     def __init__(self, maximum: int = 1, model_name: Optional[str] = None, prompt: Optional[str] = None, backend_name: Optional[str] = None, input_dir: Optional[str] = None) -> None:
         super().__init__(maximum, input_dir=input_dir)
         self.model_name: Optional[str] = model_name
@@ -54,17 +54,20 @@ class LLMTask(Task[Tuple[str, FileHandle, Dict[str, Any]], Tuple[str, str, Dict[
         self.model = None
         self.backend = None
 
-    def execute(self, item: Tuple[str, FileHandle, Dict[str, Any]]) -> Tuple[str, str, Dict[str, Any]]:
+    def execute(self, item: Tuple[str, Dict[str, Any]]) -> Tuple[str, str, Dict[str, Any]]:
         """
-        Run LLM inference on image with metadata context.
-        Args: (input_path, image_handle, metadata)
+        Prepare image, run LLM inference with metadata context.
+        Args: (input_path, metadata)
         Returns: (input_path, content, metadata)
         """
-        input_path, image_handle, metadata = item
+        input_path, metadata = item
         
         try:
             if not self.backend or not self.model:
                 raise Exception("Backend or model not configured")
+            
+            # Prepare image with backend (now done in LLM task)
+            image_handle: FileHandle = self.backend.prepare_image(input_path)
             
             # Prepare format values for prompt template
             dt = metadata.get('datetime')

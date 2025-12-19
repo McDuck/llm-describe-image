@@ -18,6 +18,8 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
     # Class-level cache shared across all threads
     _shared_images_cache: Optional[List[str]] = None
     _shared_cache_lock: threading.Lock = threading.Lock()
+    _shared_metadata_cache: Dict[str, Tuple[Optional[datetime], str]] = {}  # Shared across threads
+    _metadata_cache_lock: threading.Lock = threading.Lock()
     _cache_initialized: bool = False
     
     def __init__(
@@ -32,33 +34,36 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         self.output_dir: Optional[str] = output_dir
         self.context_window_days: int = context_window_days
         self.max_context_items: int = max_context_items
-        self._file_cache: Dict[str, Tuple[Optional[datetime], str]] = {}  # Cache: path -> (datetime, description)
     
     def load(self) -> None:
-        """Pre-load image cache before threads start (once for all threads)."""
+        """Pre-load image list before threads start (once for all threads)."""
         super().load()
         
-        # Only the first thread builds the cache
+        # Only the first thread builds the image list (not metadata - that's done on-demand)
         if not ContextTask._cache_initialized:
             with ContextTask._shared_cache_lock:
                 if not ContextTask._cache_initialized:  # Double-check
-                    print("Building image cache for context gathering...")
+                    print("Discovering images for context gathering...")
                     ContextTask._shared_images_cache = self._discover_images(self.input_dir)
+                    print(f"Found {len(ContextTask._shared_images_cache)} images")
                     ContextTask._cache_initialized = True
-                    print(f"Found {len(ContextTask._shared_images_cache)} images for context")
     
     def execute(self, item: str) -> Tuple[str, str, List[str]]:
         """
         Gather context descriptions from nearby images.
         Args: input_path
         Returns: (input_path, original_description, context_descriptions)
+        
+        Note: Reads original description (not context-enhanced version).
+        The original description should exist from a previous describe pipeline run.
         """
         input_path = item
         
-        # Read the original description
-        original_desc = self._read_description(input_path)
+        # Read the original description (plain .txt, not context-enhanced)
+        original_desc = self._read_description(input_path, use_original=True)
         if not original_desc:
-            raise Exception(f"No description file found for {input_path}")
+            # Skip images without original descriptions
+            return (input_path, "", [])
         
         # Get metadata for target image
         target_metadata = self._get_metadata(input_path)
@@ -66,17 +71,17 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         target_dir = os.path.dirname(input_path)
         target_filename = os.path.basename(input_path)
         
-        # Find all image files in input directory (cached)
+        # Get all images and filter to directory+time window FIRST (pre-filter)
         all_images = self._get_all_images()
+        candidates_to_check = self._pre_filter_candidates(
+            input_path, target_dir, target_datetime, all_images
+        )
         
-        # Score and filter context candidates
+        # Score and filter context candidates (only from pre-filtered set)
         context_candidates: List[Tuple[float, str, str]] = []  # (score, path, description)
         
-        for img_path in all_images:
-            if img_path == input_path:
-                continue  # Skip self
-            
-            desc = self._read_description(img_path)
+        for img_path in candidates_to_check:
+            desc = self._read_description(img_path, use_original=True)
             if not desc:
                 continue  # Skip images without descriptions
             
@@ -95,11 +100,24 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         
         return (input_path, original_desc, context_descriptions)
     
-    def _read_description(self, image_path: str) -> Optional[str]:
-        """Read description file for an image."""
+    def _read_description(self, image_path: str, use_original: bool = False) -> Optional[str]:
+        """
+        Read description file for an image.
+        
+        Args:
+            image_path: Path to the image file
+            use_original: If True, read the original .txt file (not context-enhanced)
+                         If False, use output_suffix configured in kwargs
+        """
         if self.input_dir and self.output_dir:
             relative = os.path.relpath(image_path, self.input_dir)
-            desc_file = os.path.join(self.output_dir, relative + ".txt")
+            
+            if use_original:
+                # Read original description file (plain .txt)
+                desc_file = os.path.join(self.output_dir, relative + ".txt")
+            else:
+                # Read context-enhanced description (uses configured suffix)
+                desc_file = os.path.join(self.output_dir, relative + ".txt")
         else:
             desc_file = image_path + ".txt"
         
@@ -113,24 +131,76 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
             return None
     
     def _get_metadata(self, image_path: str) -> Dict[str, Any]:
-        """Get or cache metadata for an image."""
-        if image_path in self._file_cache:
-            cached_dt, _ = self._file_cache[image_path]
-            return {'datetime': cached_dt}
+        """Get or cache metadata for an image (uses shared cache across all threads)."""
+        # Check shared cache first
+        with ContextTask._metadata_cache_lock:
+            if image_path in ContextTask._shared_metadata_cache:
+                cached_dt, _ = ContextTask._shared_metadata_cache[image_path]
+                return {'datetime': cached_dt}
         
-        # Import metadata extractor
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-        from metadata_extractor import get_image_metadata
+        # Import metadata extractor (located in download task)
+        from tasks.download.metadata_extractor import get_image_metadata
         
         metadata = get_image_metadata(image_path)
         desc = self._read_description(image_path) or ""
-        self._file_cache[image_path] = (metadata.get('datetime'), desc)
+        
+        # Store in shared cache
+        with ContextTask._metadata_cache_lock:
+            ContextTask._shared_metadata_cache[image_path] = (metadata.get('datetime'), desc)
         
         return metadata
     
     def _get_all_images(self) -> List[str]:
         """Get all image files from shared cache (populated during load())."""
         return ContextTask._shared_images_cache or []
+    
+    def _pre_filter_candidates(
+        self,
+        target_path: str,
+        target_dir: str,
+        target_datetime: Optional[datetime],
+        all_images: List[str]
+    ) -> List[str]:
+        """
+        Pre-filter candidates to reduce search space.
+        First filter by directory proximity, then by time window.
+        Returns much smaller candidate list for full scoring.
+        """
+        candidates = []
+        
+        for img_path in all_images:
+            if img_path == target_path:
+                continue  # Skip self
+            
+            img_dir = os.path.dirname(img_path)
+            
+            # DIRECTORY FILTER: Only include if in same or nearby directories
+            # Same directory or adjacent date folders (YYYY/YYYY-MM/YYYY-MM-DD)
+            target_parts = target_dir.split(os.sep)
+            img_parts = img_dir.split(os.sep)
+            
+            # Must share at least YYYY/YYYY-MM (year and month)
+            min_common_depth = 2  # Year and month folders
+            common_depth = sum(1 for a, b in zip(target_parts, img_parts) if a == b)
+            
+            if common_depth < min_common_depth:
+                continue  # Different months - skip
+            
+            # TIME WINDOW FILTER: Quick metadata check (only if needed)
+            if target_datetime and self.context_window_days > 0:
+                img_metadata = self._get_metadata(img_path)
+                img_datetime = img_metadata.get('datetime')
+                
+                if img_datetime:
+                    time_diff = abs((target_datetime - img_datetime).total_seconds())
+                    days_diff = time_diff / 86400.0
+                    
+                    if days_diff > self.context_window_days:
+                        continue  # Outside time window
+            
+            candidates.append(img_path)
+        
+        return candidates
     
     def _discover_images(self, root_dir: str) -> List[str]:
         """Discover all image files recursively."""

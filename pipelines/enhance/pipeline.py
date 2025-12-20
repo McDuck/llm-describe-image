@@ -39,6 +39,15 @@ class EnhanceByContextPipeline(Pipeline):
         self.context_window_days: int = DEFAULT_CONTEXT_WINDOW_DAYS
         self.max_context_items: int = DEFAULT_MAX_CONTEXT_ITEMS
         self.model_context_length: int = DEFAULT_MODEL_CONTEXT_LENGTH  # Model context window size
+        
+        # Debug mode (separate from verbose logging)
+        self.debug: bool = False
+        
+        # Skip checking (retry all items)
+        self.skip_all: bool = False
+        
+        # Retry failed items
+        self.retry_failed: bool = False
     
     TASK_CONFIG = [
         {

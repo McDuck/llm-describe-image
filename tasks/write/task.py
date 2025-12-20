@@ -84,6 +84,10 @@ class WriteTask(Task[Tuple[str, Union[str, Exception], Optional[Dict[str, Any]]]
                 if metadata and metadata.get('filename'):
                     filename_value = metadata['filename']
                 
+                camera_value = "Unknown"
+                if metadata and metadata.get('camera'):
+                    camera_value = metadata['camera']
+                
                 # Format content using template
                 # Try to format with all available placeholders, falling back gracefully
                 try:
@@ -91,7 +95,8 @@ class WriteTask(Task[Tuple[str, Union[str, Exception], Optional[Dict[str, Any]]]
                         datetime=datetime_value,
                         location=location_value,
                         content=content_or_error,
-                        filename=filename_value
+                        filename=filename_value,
+                        camera=camera_value
                     )
                 except KeyError:
                     # If template doesn't have all placeholders, try with just content

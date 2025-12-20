@@ -26,6 +26,7 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
         prompt: Optional[str] = None,
         backend_name: Optional[str] = None,
         input_dir: Optional[str] = None,
+        output_dir: Optional[str] = None,
         context_template: Optional[str] = None,
         context_item_template: Optional[str] = None,
         context_item_max_length: Optional[int] = None,
@@ -38,6 +39,7 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
         self.backend_name: Optional[str] = backend_name
         self.backend: Optional[LLMBackend] = None
         self.model = None
+        self.output_dir: Optional[str] = output_dir
         self.model_context_length: Optional[int] = model_context_length
         self.debug: bool = debug
         

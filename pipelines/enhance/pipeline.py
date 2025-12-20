@@ -97,6 +97,7 @@ class EnhanceByContextPipeline(Pipeline):
                 "prompt": getattr(self, 'enhance_prompt', None),
                 "backend_name": os.getenv("BACKEND"),
                 "input_dir": self.input_dir,
+                "output_dir": self.output_dir,
                 "context_template": getattr(self, 'context_template', None),
                 "context_item_template": getattr(self, 'context_item_template', None),
                 "model_context_length": getattr(self, 'model_context_length', 32768),

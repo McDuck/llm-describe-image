@@ -31,6 +31,7 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
         context_item_template: Optional[str] = None,
         context_item_max_length: Optional[int] = None,
         max_context_in_prompt: Optional[int] = None,
+        max_context_length: Optional[int] = None,
         model_context_length: Optional[int] = None,
         debug: bool = False
     ) -> None:
@@ -50,12 +51,14 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
             DEFAULT_CONTEXT_TEMPLATE,
             DEFAULT_CONTEXT_ITEM_TEMPLATE,
             DEFAULT_CONTEXT_ITEM_MAX_LENGTH,
-            DEFAULT_MAX_CONTEXT_IN_PROMPT
+            DEFAULT_MAX_CONTEXT_IN_PROMPT,
+            DEFAULT_MAX_CONTEXT_LENGTH
         )
         self.context_template: str = context_template or DEFAULT_CONTEXT_TEMPLATE
         self.context_item_template: str = context_item_template or DEFAULT_CONTEXT_ITEM_TEMPLATE
         self.context_item_max_length: int = context_item_max_length or DEFAULT_CONTEXT_ITEM_MAX_LENGTH
         self.max_context_in_prompt: int = max_context_in_prompt or DEFAULT_MAX_CONTEXT_IN_PROMPT
+        self.max_context_length: int = max_context_length or DEFAULT_MAX_CONTEXT_LENGTH
     
     def load(self) -> None:
         """Load the model and backend. Called by worker thread at start."""
@@ -81,13 +84,13 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
         self.model = None
         self.backend = None
     
-    def execute(self, item: Tuple[str, str, List[str]]) -> Tuple[str, str]:
+    def execute(self, item: Tuple[str, str, List[str], List[str]]) -> Tuple[str, str]:
         """
         Enhance description using LLM with context.
-        Args: (image_path, original_description, context_descriptions)
+        Args: (image_path, original_description, context_descriptions, context_full_descs)
         Returns: (image_path, enhanced_description)
         """
-        image_path, original_desc, context_descs = item
+        image_path, original_desc, context_descs, context_full_descs = item
         
         try:
             if not self.backend or not self.model:
@@ -95,12 +98,21 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
             
             # Build context section using templates from config
             context_section = ""
+            
             if context_descs:
                 items_text = ""
-                for i, ctx in enumerate(context_descs[:self.max_context_in_prompt], 1):
+                total_context_length = 0
+                
+                # Use full descriptions (with metadata like filename) for context building
+                # Context task already returns items with closest at bottom
+                descs_to_use = context_full_descs if context_full_descs else context_descs
+                
+                for i, ctx in enumerate(descs_to_use[:self.max_context_in_prompt], 1):
                     # Truncate context item if needed
                     truncated = ctx[:self.context_item_max_length] + "..." if len(ctx) > self.context_item_max_length else ctx
-                    items_text += self.context_item_template.format(
+                    
+                    # Check if adding this item would exceed max context length
+                    item_text = self.context_item_template.format(
                         number=i,
                         description=truncated
                     )

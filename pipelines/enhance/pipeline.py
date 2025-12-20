@@ -23,8 +23,11 @@ class EnhanceByContextPipeline(Pipeline):
             DEFAULT_ENHANCEMENT_OUTPUT_FORMAT,
             DEFAULT_CONTEXT_TEMPLATE,
             DEFAULT_CONTEXT_ITEM_TEMPLATE,
+            DEFAULT_CONTEXT_ITEM_MAX_LENGTH,
+            DEFAULT_MAX_CONTEXT_IN_PROMPT,
             DEFAULT_CONTEXT_WINDOW_DAYS,
             DEFAULT_MAX_CONTEXT_ITEMS,
+            DEFAULT_MAX_CONTEXT_LENGTH,
             DEFAULT_MODEL_CONTEXT_LENGTH,
         )
         
@@ -40,8 +43,11 @@ class EnhanceByContextPipeline(Pipeline):
         self.output_format: str = DEFAULT_ENHANCEMENT_OUTPUT_FORMAT
         self.context_template: str = DEFAULT_CONTEXT_TEMPLATE
         self.context_item_template: str = DEFAULT_CONTEXT_ITEM_TEMPLATE
+        self.context_item_max_length: int = DEFAULT_CONTEXT_ITEM_MAX_LENGTH
+        self.max_context_in_prompt: int = DEFAULT_MAX_CONTEXT_IN_PROMPT
         self.context_window_days: int = DEFAULT_CONTEXT_WINDOW_DAYS
         self.max_context_items: int = DEFAULT_MAX_CONTEXT_ITEMS
+        self.max_context_length: int = DEFAULT_MAX_CONTEXT_LENGTH  # Max chars for context to avoid token limit
         self.model_context_length: int = DEFAULT_MODEL_CONTEXT_LENGTH  # Model context window size
         
         # Debug mode (separate from verbose logging)
@@ -100,6 +106,9 @@ class EnhanceByContextPipeline(Pipeline):
                 "output_dir": self.output_dir,
                 "context_template": getattr(self, 'context_template', None),
                 "context_item_template": getattr(self, 'context_item_template', None),
+                "context_item_max_length": getattr(self, 'context_item_max_length', None),
+                "max_context_in_prompt": getattr(self, 'max_context_in_prompt', None),
+                "max_context_length": getattr(self, 'max_context_length', 8000),
                 "model_context_length": getattr(self, 'model_context_length', 32768),
                 "debug": getattr(self, 'debug', False)
             }

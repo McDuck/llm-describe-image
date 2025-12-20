@@ -136,6 +136,9 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
             # Run LLM inference (text-only, no image)
             raw_output = self.backend.respond(self.model, full_prompt)
             
+            if not raw_output:
+                raise Exception("LLM returned empty response")
+            
             # Write debug output file if requested (raw LLM output with <think> tags)
             if self.debug:
                 self._write_debug_output(image_path, raw_output)

@@ -21,6 +21,8 @@ class EnhanceByContextPipeline(Pipeline):
             DEFAULT_CONTEXT_MODEL_NAME,
             DEFAULT_ENHANCEMENT_PROMPT,
             DEFAULT_ENHANCEMENT_OUTPUT_FORMAT,
+            DEFAULT_CONTEXT_TEMPLATE,
+            DEFAULT_CONTEXT_ITEM_TEMPLATE,
             DEFAULT_CONTEXT_WINDOW_DAYS,
             DEFAULT_MAX_CONTEXT_ITEMS,
             DEFAULT_MODEL_CONTEXT_LENGTH,
@@ -36,6 +38,8 @@ class EnhanceByContextPipeline(Pipeline):
         self.enhance_model: str = DEFAULT_CONTEXT_MODEL_NAME
         self.enhance_prompt: str = DEFAULT_ENHANCEMENT_PROMPT
         self.output_format: str = DEFAULT_ENHANCEMENT_OUTPUT_FORMAT
+        self.context_template: str = DEFAULT_CONTEXT_TEMPLATE
+        self.context_item_template: str = DEFAULT_CONTEXT_ITEM_TEMPLATE
         self.context_window_days: int = DEFAULT_CONTEXT_WINDOW_DAYS
         self.max_context_items: int = DEFAULT_MAX_CONTEXT_ITEMS
         self.model_context_length: int = DEFAULT_MODEL_CONTEXT_LENGTH  # Model context window size
@@ -93,6 +97,8 @@ class EnhanceByContextPipeline(Pipeline):
                 "prompt": getattr(self, 'enhance_prompt', None),
                 "backend_name": os.getenv("BACKEND"),
                 "input_dir": self.input_dir,
+                "context_template": getattr(self, 'context_template', None),
+                "context_item_template": getattr(self, 'context_item_template', None),
                 "model_context_length": getattr(self, 'model_context_length', 32768),
                 "debug": getattr(self, 'debug', False)
             }

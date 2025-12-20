@@ -31,6 +31,7 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
         context_item_max_length: Optional[int] = None,
         max_context_in_prompt: Optional[int] = None,
         model_context_length: Optional[int] = None,
+        debug: bool = False
     ) -> None:
         super().__init__(maximum, input_dir=input_dir)
         self.model_name: Optional[str] = model_name
@@ -38,6 +39,7 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
         self.backend: Optional[LLMBackend] = None
         self.model = None
         self.model_context_length: Optional[int] = model_context_length
+        self.debug: bool = debug
         
         self.prompt: Optional[str] = prompt
         
@@ -113,8 +115,16 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
                 # If template has no placeholders or formatting fails, use as-is
                 full_prompt = self.prompt
             
+            # Write debug input file BEFORE LLM call (so we see what was sent)
+            if self.debug:
+                self._write_debug_input(image_path, full_prompt)
+            
             # Run LLM inference (text-only, no image)
             enhanced_desc = self.backend.respond(self.model, full_prompt)
+
+            # Write debug output file if requested (raw LLM output with <think> tags)
+            if self.debug:
+                self._write_debug_output(image_path, raw_output)
             
             return (image_path, enhanced_desc)
             
@@ -126,4 +136,54 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
                     rel_path = os.path.relpath(image_path, self.input_dir)
                 except (ValueError, TypeError):
                     pass
-            raise Exception(f"Enhancement failed for {rel_path}: {str(e)}")
+            raise Exception(f"Enhancement failed for {rel_path}: {str(e)}")    
+    def _write_debug_input(self, image_path: str, full_prompt: str) -> None:
+        """Write debug input file with the full LLM prompt that was sent."""
+        if not self.output_dir:
+            return
+        
+        try:
+            relative = os.path.relpath(image_path, self.input_dir) if self.input_dir else os.path.basename(image_path)
+            debug_file = os.path.join(self.output_dir, relative + ".enhanced.input.txt")
+            
+            # Ensure directory exists
+            debug_dir = os.path.dirname(debug_file)
+            if not os.path.exists(debug_dir):
+                os.makedirs(debug_dir, exist_ok=True)
+            
+            with open(debug_file, "w", encoding="utf-8") as f:
+                f.write(full_prompt)
+        except Exception as e:
+            # Log error but don't fail the task
+            try:
+                import sys
+                print(f"Warning: Failed to write debug input for {image_path}: {e}", file=sys.stderr)
+            except:
+                pass
+    
+    def _write_debug_output(self, image_path: str, raw_output: str) -> None:
+        """Write debug output file with raw LLM response (including <think> tags)."""
+        if not self.output_dir:
+            return
+        
+        try:
+            relative = os.path.relpath(image_path, self.input_dir) if self.input_dir else os.path.basename(image_path)
+            debug_file = os.path.join(self.output_dir, relative + ".enhanced.output.txt")
+            
+            # Ensure directory exists
+            debug_dir = os.path.dirname(debug_file)
+            if not os.path.exists(debug_dir):
+                os.makedirs(debug_dir, exist_ok=True)
+            
+            with open(debug_file, "w", encoding="utf-8") as f:
+                if raw_output:
+                    f.write(raw_output)
+                else:
+                    f.write("(empty response)")
+        except Exception as e:
+            # Log error but don't fail the task
+            try:
+                import sys
+                print(f"Warning: Failed to write debug output for {image_path}: {e}", file=sys.stderr)
+            except:
+                pass

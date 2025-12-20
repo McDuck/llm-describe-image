@@ -93,7 +93,8 @@ class EnhanceByContextPipeline(Pipeline):
                 "prompt": getattr(self, 'enhance_prompt', None),
                 "backend_name": os.getenv("BACKEND"),
                 "input_dir": self.input_dir,
-                "model_context_length": getattr(self, 'model_context_length', 32768)
+                "model_context_length": getattr(self, 'model_context_length', 32768),
+                "debug": getattr(self, 'debug', False)
             }
         },
         {

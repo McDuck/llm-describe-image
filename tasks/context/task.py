@@ -157,8 +157,6 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         
         Returns: list of image paths in natural sort order around the target file
         """
-        print(f"DEBUG: Gathering nearby images for {input_path} within {root_path}")
-        if not root_path:
             return []
         
         try:
@@ -179,27 +177,20 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
                 if current_dir_key is None:
                     break
                 dirs_to_discover[current_dir_key] = False
-                #print(f"DEBUG: Exploring directory (up) {current_dir_key}")
 
                 for filename in os.listdir(current_dir_key):
                     filepath = os.path.join(current_dir_key, filename)
-                    #print(f"DEBUG:File (up) {filepath} {filepath > input_path}")
                     if (filepath >= input_path):
-                        #print(f"DEBUG: Skipping (up) {filepath}")
                         continue
                     if (os.path.isdir(filepath)):
                         if filepath not in dirs_to_discover:
                             dirs_to_discover[filepath] = True
-                            #print(f"DEBUG: Found directory (up) {filepath}")
                         continue
                     if any(filename.lower().endswith(ext) for ext in DEFAULT_IMAGE_EXTENSIONS):
                         all_up_images.append(filepath)
-                        #print(f"DEBUG: Found candidate (up) {filepath}")
                 parent_dir = os.path.dirname(current_dir_key)
                 if parent_dir.startswith(root_path) and parent_dir not in dirs_to_discover:
                     dirs_to_discover[parent_dir] = True
-            
-            #print(f"DEBUG: Up candidates", all_up_images)
             
             # Collect images <= target path by expanding from target directory upward
             dirs_to_discover: Dict[str, bool] = {current_dir: True}
@@ -214,23 +205,18 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
 
                 for filename in os.listdir(current_dir_key):
                     filepath = os.path.join(current_dir_key, filename)
-                    #print(f"DEBUG:File (down) {filepath} {filepath > input_path}")
                     if filepath <= input_path:
                         continue
                     if (os.path.isdir(filepath)):
                         if filepath not in dirs_to_discover:
                             dirs_to_discover[filepath] = True
-                            #print(f"DEBUG: Found directory (down) {filepath}")
                         continue
                     if any(filename.lower().endswith(ext) for ext in DEFAULT_IMAGE_EXTENSIONS):
                         all_down_images.append(filepath)
-                        #print(f"DEBUG: Found candidate (down) {filepath}")
                 
                 parent_dir = os.path.dirname(current_dir_key)
                 if parent_dir.startswith(root_path) and parent_dir not in dirs_to_discover:
                     dirs_to_discover[parent_dir] = True
-            
-            #print(f"DEBUG: Down candidates", all_down_images)
             
             all_images = all_up_images + all_down_images
 

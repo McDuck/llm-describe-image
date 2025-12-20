@@ -15,12 +15,6 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
     Output: (image_path, original_description, context_descriptions)
     """
     
-    # Class-level cache shared across all threads
-    _shared_images_cache: Optional[List[str]] = None
-    _shared_cache_lock: threading.Lock = threading.Lock()
-    _shared_metadata_cache: Dict[str, Tuple[Optional[datetime], str]] = {}  # Shared across threads
-    _metadata_cache_lock: threading.Lock = threading.Lock()
-    _cache_initialized: bool = False
     
     def __init__(
         self,
@@ -36,19 +30,11 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         self.max_context_items: int = max_context_items
     
     def load(self) -> None:
-        """Pre-load image list before threads start (once for all threads)."""
+        """Initialize without discovering all images (lazy loading)."""
         super().load()
-        
-        # Only the first thread builds the image list (not metadata - that's done on-demand)
-        if not ContextTask._cache_initialized:
-            with ContextTask._shared_cache_lock:
-                if not ContextTask._cache_initialized:  # Double-check
-                    print("Discovering images for context gathering...")
-                    ContextTask._shared_images_cache = self._discover_images(self.input_dir)
-                    print(f"Found {len(ContextTask._shared_images_cache)} images")
-                    ContextTask._cache_initialized = True
+        # Don't pre-cache all 160K images - discover on-demand per worker
     
-    def execute(self, item: str) -> Tuple[str, str, List[str]]:
+    def execute(self, input_path: str) -> Tuple[str, str, List[str]]:
         """
         Gather context descriptions from nearby images.
         Args: input_path
@@ -57,8 +43,6 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         Note: Reads original description (not context-enhanced version).
         The original description should exist from a previous describe pipeline run.
         """
-        input_path = item
-        
         # Read the original description (plain .txt, not context-enhanced)
         original_desc = self._read_description(input_path, use_original=True)
         if not original_desc:
@@ -66,21 +50,31 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
             return (input_path, "", [])
         
         # Get metadata for target image
-        target_metadata = self._get_metadata(input_path)
-        target_datetime = target_metadata.get('datetime')
+        from tasks.download.metadata_extractor import get_image_metadata
+        target_metadata = get_image_metadata(input_path)
         target_dir = os.path.dirname(input_path)
-        target_filename = os.path.basename(input_path)
         
-        # Get all images and filter to directory+time window FIRST (pre-filter)
-        all_images = self._get_all_images()
-        candidates_to_check = self._pre_filter_candidates(
-            input_path, target_dir, target_datetime, all_images
+        # Get candidate images from nearby folders only (not all 2300+ images)
+        candidates_to_check = self._get_nearby_images(
+            input_path,
+            self.input_dir,
+            target_metadata
         )
         
-        # Score and filter context candidates (only from pre-filtered set)
-        context_candidates: List[Tuple[float, str, str]] = []  # (score, path, description)
+        # If no candidates found, return with empty context
+        if not candidates_to_check:
+            print(f"DEBUG: No candidates found in {target_dir}")
+            return (input_path, original_desc, [], original_desc, [])
         
-        for img_path in candidates_to_check:
+        # Score and filter context candidates (only from pre-filtered set)
+        context_candidates: List[Tuple[Tuple[float, float], str, str, str]] = []  # ((min_score, max_score), path, full_desc, desc_content)
+        
+        found_count = 0
+        desc_count = 0
+        
+        for score, img_path in candidates_to_check:
+            found_count += 1
+            
             desc = self._read_description(img_path, use_original=True)
             if not desc:
                 continue  # Skip images without descriptions
@@ -91,14 +85,31 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
                 target_metadata
             )
             
-            if score > 0:
-                context_candidates.append((score, img_path, desc))
+            if score[1] < float('inf'):  # Check max value isn't infinity
+                context_candidates.append((score, img_path, desc, desc))
         
-        # Sort by score (highest first) and take top N
-        context_candidates.sort(reverse=True, key=lambda x: x[0])
-        context_descriptions = [desc for _, _, desc in context_candidates[:self.max_context_items]]
+        # Candidates are already sorted by relevance from _get_nearby_images
+        # Return both full descriptions (for debug) and content-only (for prompt)
+        context_full_descs = [full_desc for _, _, full_desc, _ in context_candidates[:self.max_context_items]]
+        context_descriptions = [desc for _, _, _, desc in context_candidates[:self.max_context_items]]
         
-        return (input_path, original_desc, context_descriptions)
+        # Debug: show first few and last few selected items with their scores and dates
+        if context_candidates:
+            print(f"DEBUG: Found {found_count} images, {desc_count} with descriptions")
+            print(f"DEBUG: Selecting {len(context_descriptions)} items (top {self.max_context_items})")
+            if len(context_candidates) > 0:
+                for i, (score_range, path, _, _) in enumerate(context_candidates[:3]):
+                    rel = os.path.relpath(path, self.input_dir) if self.input_dir else path
+                    min_s, max_s = score_range
+                    print(f"  [{i}] score={min_s:.0f}-{max_s:.0f} (1st) {rel}")
+                if len(context_candidates) > 6:
+                    print(f"  ...")
+                for i, (score_range, path, _, _) in enumerate(context_candidates[-3:], len(context_candidates)-3):
+                    rel = os.path.relpath(path, self.input_dir) if self.input_dir else path
+                    min_s, max_s = score_range
+                    print(f"  [{i}] score={min_s:.0f}-{max_s:.0f} (last) {rel}")
+        
+        return (input_path, original_desc, context_descriptions, original_desc, context_full_descs)
     
     def _read_description(self, image_path: str, use_original: bool = False) -> Optional[str]:
         """
@@ -126,93 +137,145 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         
         try:
             with open(desc_file, "r", encoding="utf-8") as f:
-                return f.read().strip()
+                content = f.read().strip()
+                return content
         except Exception:
             return None
     
-    def _get_metadata(self, image_path: str) -> Dict[str, Any]:
-        """Get or cache metadata for an image (uses shared cache across all threads)."""
-        # Check shared cache first
-        with ContextTask._metadata_cache_lock:
-            if image_path in ContextTask._shared_metadata_cache:
-                cached_dt, _ = ContextTask._shared_metadata_cache[image_path]
-                return {'datetime': cached_dt}
-        
-        # Import metadata extractor (located in download task)
-        from tasks.download.metadata_extractor import get_image_metadata
-        
-        metadata = get_image_metadata(image_path)
-        desc = self._read_description(image_path) or ""
-        
-        # Store in shared cache
-        with ContextTask._metadata_cache_lock:
-            ContextTask._shared_metadata_cache[image_path] = (metadata.get('datetime'), desc)
-        
-        return metadata
-    
-    def _get_all_images(self) -> List[str]:
-        """Get all image files from shared cache (populated during load())."""
-        return ContextTask._shared_images_cache or []
-    
-    def _pre_filter_candidates(
-        self,
-        target_path: str,
-        target_dir: str,
-        target_datetime: Optional[datetime],
-        all_images: List[str]
-    ) -> List[str]:
+    def _extract_description_content(self, formatted_text: str) -> Optional[str]:
         """
-        Pre-filter candidates to reduce search space.
-        First filter by directory proximity, then by time window.
-        Returns much smaller candidate list for full scoring.
+        Extract just the description content from formatted output.
+        Looks for content after "Beschrijving:" or "Verbeterde beschrijving:" headers.
         """
-        candidates = []
+        # Try to find "Beschrijving:" header
+        markers = ["Verbeterde beschrijving:", "Beschrijving:"]
         
-        for img_path in all_images:
-            if img_path == target_path:
-                continue  # Skip self
+        for marker in markers:
+            if marker in formatted_text:
+                # Split by marker and get the part after it
+                parts = formatted_text.split(marker, 1)
+                if len(parts) > 1:
+                    content = parts[1].strip()
+                    return content if content else None
+        
+        # If no marker found, assume entire text is description
+        return formatted_text if formatted_text else None
+    
+
+    def _get_nearby_images(self, input_path: str, root_path: str, target_metadata: Dict[str, Any]) -> List[Tuple[Tuple[float, float], str]]:
+        """
+        Get images closest to the input file in natural sort order.
+        
+        Collects images in two passes:
+        - First: images >= target path (sorted naturally)
+        - Second: images <= target path (sorted naturally)
+        
+        Combines both, sorts everything, finds the target's position,
+        and returns N images before and N images after it.
+        N is determined by max_context_items // 2.
+        
+        Returns: list of image paths in natural sort order around the target file
+        """
+        print(f"DEBUG: Gathering nearby images for {input_path} within {root_path}")
+        if not root_path:
+            return []
+        
+        try:
+            from config_loader import DEFAULT_IMAGE_EXTENSIONS
             
-            img_dir = os.path.dirname(img_path)
+            normalized_input_path: str = os.path.normpath(input_path)
+            context_count: int = self.max_context_items // 2
+            current_dir: str = os.path.dirname(normalized_input_path)
+            all_images: List[str] = []
             
-            # DIRECTORY FILTER: Only include if in same or nearby directories
-            # Same directory or adjacent date folders (YYYY/YYYY-MM/YYYY-MM-DD)
-            target_parts = target_dir.split(os.sep)
-            img_parts = img_dir.split(os.sep)
+            # Collect images >= target path by expanding from target directory upward
+            dirs_to_discover: Dict[str, bool] = {current_dir: True}
+            all_up_images: List[str] = []
+
+            while any(dirs_to_discover.values()) and len(all_up_images) < self.max_context_items * 2:
+                # Find the directory that still needs to be discovered with the highest natural sort order
+                current_dir_key = max((d for d, needs_discovery in dirs_to_discover.items() if needs_discovery), default=None)
+                if current_dir_key is None:
+                    break
+                dirs_to_discover[current_dir_key] = False
+                #print(f"DEBUG: Exploring directory (up) {current_dir_key}")
+
+                for filename in os.listdir(current_dir_key):
+                    filepath = os.path.join(current_dir_key, filename)
+                    #print(f"DEBUG:File (up) {filepath} {filepath > input_path}")
+                    if (filepath >= input_path):
+                        #print(f"DEBUG: Skipping (up) {filepath}")
+                        continue
+                    if (os.path.isdir(filepath)):
+                        if filepath not in dirs_to_discover:
+                            dirs_to_discover[filepath] = True
+                            #print(f"DEBUG: Found directory (up) {filepath}")
+                        continue
+                    if any(filename.lower().endswith(ext) for ext in DEFAULT_IMAGE_EXTENSIONS):
+                        all_up_images.append(filepath)
+                        #print(f"DEBUG: Found candidate (up) {filepath}")
+                parent_dir = os.path.dirname(current_dir_key)
+                if parent_dir.startswith(root_path) and parent_dir not in dirs_to_discover:
+                    dirs_to_discover[parent_dir] = True
             
-            # Must share at least YYYY/YYYY-MM (year and month)
-            min_common_depth = 2  # Year and month folders
-            common_depth = sum(1 for a, b in zip(target_parts, img_parts) if a == b)
+            #print(f"DEBUG: Up candidates", all_up_images)
             
-            if common_depth < min_common_depth:
-                continue  # Different months - skip
-            
-            # TIME WINDOW FILTER: Quick metadata check (only if needed)
-            if target_datetime and self.context_window_days > 0:
-                img_metadata = self._get_metadata(img_path)
-                img_datetime = img_metadata.get('datetime')
+            # Collect images <= target path by expanding from target directory upward
+            dirs_to_discover: Dict[str, bool] = {current_dir: True}
+            all_down_images: List[str] = []
+
+            while any(dirs_to_discover.values()) and len(all_down_images) < self.max_context_items * 2:
+                # Find the directory that still needs to be discovered with the highest natural sort order
+                current_dir_key = min((d for d, needs_discovery in dirs_to_discover.items() if needs_discovery), default=None)
+                if current_dir_key is None:
+                    break
+                dirs_to_discover[current_dir_key] = False
+
+                for filename in os.listdir(current_dir_key):
+                    filepath = os.path.join(current_dir_key, filename)
+                    #print(f"DEBUG:File (down) {filepath} {filepath > input_path}")
+                    if filepath <= input_path:
+                        continue
+                    if (os.path.isdir(filepath)):
+                        if filepath not in dirs_to_discover:
+                            dirs_to_discover[filepath] = True
+                            #print(f"DEBUG: Found directory (down) {filepath}")
+                        continue
+                    if any(filename.lower().endswith(ext) for ext in DEFAULT_IMAGE_EXTENSIONS):
+                        all_down_images.append(filepath)
+                        #print(f"DEBUG: Found candidate (down) {filepath}")
                 
-                if img_datetime:
-                    time_diff = abs((target_datetime - img_datetime).total_seconds())
-                    days_diff = time_diff / 86400.0
-                    
-                    if days_diff > self.context_window_days:
-                        continue  # Outside time window
+                parent_dir = os.path.dirname(current_dir_key)
+                if parent_dir.startswith(root_path) and parent_dir not in dirs_to_discover:
+                    dirs_to_discover[parent_dir] = True
             
-            candidates.append(img_path)
+            #print(f"DEBUG: Down candidates", all_down_images)
+            
+            all_images = all_up_images + all_down_images
+
+            if not all_images:
+                return []
+
+            # Score all candidates by temporal proximity
+            from tasks.download.metadata_extractor import get_image_metadata
+            scored_candidates: List[Tuple[Tuple[float, float], str]] = []
+            
+            for img_path in all_images:
+                if os.path.normpath(img_path) == os.path.normpath(input_path):
+                    continue
+                
+                candidate_metadata = get_image_metadata(img_path)
+                score = self._calculate_relevance_score(target_metadata, candidate_metadata)
+                scored_candidates.append((score, img_path))
+            
+            # Sort by score (highest/most relevant first)
+            scored_candidates.sort(key=lambda x: x[0][1])
+            
+            return scored_candidates
         
-        return candidates
-    
-    def _discover_images(self, root_dir: str) -> List[str]:
-        """Discover all image files recursively."""
-        from config_loader import DEFAULT_IMAGE_EXTENSIONS
-        
-        images: List[str] = []
-        for dirpath, _, filenames in os.walk(root_dir):
-            for filename in filenames:
-                if any(filename.lower().endswith(ext) for ext in DEFAULT_IMAGE_EXTENSIONS):
-                    images.append(os.path.join(dirpath, filename))
-        
-        return images
+        except Exception:
+            # If something fails, just return empty list
+            return []
     
     def _calculate_relevance_score(
         self,

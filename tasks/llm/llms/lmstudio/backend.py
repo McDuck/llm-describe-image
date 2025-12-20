@@ -66,21 +66,52 @@ class LMStudioBackend(LLMBackend):
         success, _ = self._run_cli_command([cli, "server", "status"], capture_output=True)
         return False  # Server exists but we didn't start it
 
-    def load_model(self, model_name: str, allow_cli_install: bool) -> Any:
+    def load_model(self, model_name: str, allow_cli_install: bool, context_size: int = 0) -> Any:
         cli = self._cli()
-        # detect preloaded
+        preloaded_model_name = None
+        preloaded_context_size = None
+        
+        # detect preloaded model
         if cli:
             success, output = self._run_cli_command([cli, "ps"], capture_output=True)
             if success and output and output.strip():
                 lines = output.strip().split('\n')
                 if len(lines) > 1:
                     self._model_was_preloaded = True
-                    print(f"Model already loaded: {model_name}")
+                    # Extract model name and context size from ps output
+                    parts = lines[1].split()
+                    preloaded_model_name = parts[0] if len(parts) > 0 else None
+                    # Context is usually in a column, try to find it
+                    if len(parts) > 4:
+                        try:
+                            preloaded_context_size = int(parts[4])
+                        except (ValueError, IndexError):
+                            pass
+                    print(f"Model already loaded: {preloaded_model_name} (context: {preloaded_context_size})")
+        
+        # If we need a specific context size and model is loaded with different context, unload it first
+        if context_size > 0 and self._model_was_preloaded and (preloaded_model_name != model_name or preloaded_context_size != context_size) and cli:
+            print(f"Unloading preloaded model (context {preloaded_context_size}) to load {model_name} with required context size {context_size}...")
+            self._run_cli_command([cli, "unload"])
+            self._model_was_preloaded = False
         
         if not self._model_was_preloaded:
-            print(f"Loading model: {model_name}...")
+            print(f"Loading model with context size {context_size}..." if context_size > 0 else "Loading model...")
         
         try:
+            # Try loading with context size using CLI if specified and not preloaded
+            if context_size > 0 and cli and not self._model_was_preloaded:
+                # Use CLI to load with custom context length
+                cli_cmd = [cli, "load", model_name, "--context-length", str(context_size), "-y"]
+                cli_result = self._run_cli_command(cli_cmd)
+                if cli_result[0]:
+                    model = lms.llm(model_name)
+                    if model:
+                        print(f"Model loaded.")
+                        return model
+                # Fall through to standard load if CLI fails
+            
+            # Fall back to standard load
             model = lms.llm(model_name)
             if not self._model_was_preloaded:
                 print(f"Model loaded.")

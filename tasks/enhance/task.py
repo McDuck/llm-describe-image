@@ -29,13 +29,16 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
         context_template: Optional[str] = None,
         context_item_template: Optional[str] = None,
         context_item_max_length: Optional[int] = None,
-        max_context_in_prompt: Optional[int] = None
+        max_context_in_prompt: Optional[int] = None,
+        model_context_length: Optional[int] = None,
     ) -> None:
         super().__init__(maximum, input_dir=input_dir)
         self.model_name: Optional[str] = model_name
         self.backend_name: Optional[str] = backend_name
         self.backend: Optional[LLMBackend] = None
         self.model = None
+        self.model_context_length: Optional[int] = model_context_length
+        
         self.prompt: Optional[str] = prompt
         
         # Context formatting configuration
@@ -52,9 +55,13 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
     
     def load(self) -> None:
         """Load the model and backend. Called by worker thread at start."""
+        from config_loader import DEFAULT_MODEL_CONTEXT_LENGTH
+        
         self.backend = get_backend(self.backend_name)
         if self.backend:
-            self.model = self.backend.load_model(self.model_name, allow_cli_install=False)
+            # Load with configured context window for handling context-rich prompts
+            context_size = self.model_context_length or DEFAULT_MODEL_CONTEXT_LENGTH
+            self.model = self.backend.load_model(self.model_name, allow_cli_install=False, context_size=context_size)
         
         if not self.model:
             raise Exception(f"Failed to load context enhancement model: {self.model_name}")

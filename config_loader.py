@@ -48,6 +48,7 @@ DEFAULT_RETRY_FAILED: bool = _config["retry"]["failed"]
 DEFAULT_IMAGE_EXTENSIONS: Set[str] = set(_config["image"]["extensions"])
 DEFAULT_PIPELINE_MODE: str = _config["pipeline"]["mode"]
 DEFAULT_CONTEXT_MODEL_NAME: str = _config["enhancement"]["model"]
+DEFAULT_MODEL_CONTEXT_LENGTH: int = _config["enhancement"]["model_context_length"]
 DEFAULT_CONTEXT_WINDOW_DAYS: int = _config["enhancement"]["context_window_days"]
 DEFAULT_MAX_CONTEXT_ITEMS: int = _config["enhancement"]["max_context_items"]
 DEFAULT_CONTEXT_TEMPLATE: str = _config["enhancement"]["context_template"]

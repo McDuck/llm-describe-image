@@ -23,6 +23,7 @@ class EnhanceByContextPipeline(Pipeline):
             DEFAULT_ENHANCEMENT_OUTPUT_FORMAT,
             DEFAULT_CONTEXT_WINDOW_DAYS,
             DEFAULT_MAX_CONTEXT_ITEMS,
+            DEFAULT_MODEL_CONTEXT_LENGTH,
         )
         
         self.num_discover_threads: int = DEFAULT_NUM_DISCOVER_THREADS
@@ -37,6 +38,7 @@ class EnhanceByContextPipeline(Pipeline):
         self.output_format: str = DEFAULT_ENHANCEMENT_OUTPUT_FORMAT
         self.context_window_days: int = DEFAULT_CONTEXT_WINDOW_DAYS
         self.max_context_items: int = DEFAULT_MAX_CONTEXT_ITEMS
+        self.model_context_length: int = DEFAULT_MODEL_CONTEXT_LENGTH  # Model context window size
     
     TASK_CONFIG = [
         {
@@ -79,7 +81,8 @@ class EnhanceByContextPipeline(Pipeline):
                 "model_name": getattr(self, 'enhance_model', None),
                 "prompt": getattr(self, 'enhance_prompt', None),
                 "backend_name": os.getenv("BACKEND"),
-                "input_dir": self.input_dir
+                "input_dir": self.input_dir,
+                "model_context_length": getattr(self, 'model_context_length', 32768)
             }
         },
         {

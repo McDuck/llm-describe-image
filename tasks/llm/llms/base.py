@@ -19,8 +19,12 @@ class LLMBackend(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def load_model(self, model_name: str, allow_cli_install: bool) -> Any:
+    def load_model(self, model_name: str, allow_cli_install: bool, context_size: int = 0) -> Any:
         """Load or attach to a model and return a model handle.
+        Args:
+            model_name: Name of the model to load
+            allow_cli_install: Whether to allow CLI installation
+            context_size: Desired context window size (0 = use model default)
         Return None on failure.
         """
         raise NotImplementedError

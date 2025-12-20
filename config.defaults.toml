@@ -28,6 +28,7 @@ output_format = "Bestandsnaam: {filename}\nDatumtijd: {datetime}\nLocatie: {loca
 # Text-only models are typically better for enhancement tasks (faster, cheaper, more focused on language)
 # Good options: llama3, mistral, qwen2.5 (text models work well for refining existing descriptions)
 model = "qwen/qwen3-8b"
+model_context_length = 16384  # Context window size - 16K tokens for 16GB VRAM with 8B model
 # Context section template with placeholder: {items} (list of numbered context descriptions)
 context_template = "Context van andere foto's uit dezelfde periode/locatie:\n\n{items}\n"
 # Single context item template with placeholders: {number}, {description}

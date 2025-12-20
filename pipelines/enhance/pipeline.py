@@ -95,8 +95,8 @@ class EnhanceByContextPipeline(Pipeline):
                 "input_dir": self.input_dir,
                 "output_dir": self.output_dir,
                 "output_format": getattr(self, 'output_format', ""),
-                "output_suffix": ".context-enhanced.txt",
-                "error_suffix": ".context-enhanced.error.txt"
+                "output_suffix": ".enhanced.txt",
+                "error_suffix": ".enhanced.error.txt"
             }
         }
     ]

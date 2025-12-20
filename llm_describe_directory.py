@@ -89,7 +89,10 @@ def main() -> None:
             prompt_text = f.read().strip()
     
     # Print configuration
-    print(f"Using model: {model_name}")
+    context_size_info = ""
+    if hasattr(pipeline, 'model_context_length'):
+        context_size_info = f" with context size {pipeline.model_context_length}"
+    print(f"Using model: {model_name}{context_size_info}")
     print(f"Prompt source: {'file' if args.prompt_file or (prompt_text.startswith('@')) else 'inline'}")
     print(f"Threads: skip={DEFAULT_NUM_SKIP_CHECKER_THREADS}, download={DEFAULT_NUM_DOWNLOAD_THREADS}, llm={DEFAULT_NUM_LLM_THREADS}, write={DEFAULT_NUM_WRITE_THREADS}")
     

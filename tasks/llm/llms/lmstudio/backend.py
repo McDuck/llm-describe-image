@@ -96,7 +96,7 @@ class LMStudioBackend(LLMBackend):
             self._model_was_preloaded = False
         
         if not self._model_was_preloaded:
-            print(f"Loading model with context size {context_size}..." if context_size > 0 else "Loading model...")
+            print("Loading model...")
         
         try:
             # Try loading with context size using CLI if specified and not preloaded

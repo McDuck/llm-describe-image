@@ -53,6 +53,7 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         from tasks.download.metadata_extractor import get_image_metadata
         target_metadata = get_image_metadata(input_path)
         target_dir = os.path.dirname(input_path)
+        target_filename = os.path.basename(input_path)
         
         # Get candidate images from nearby folders only (not all 2300+ images)
         candidates_to_check = self._get_nearby_images(
@@ -63,7 +64,6 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         
         # If no candidates found, return with empty context
         if not candidates_to_check:
-            print(f"DEBUG: No candidates found in {target_dir}")
             return (input_path, original_desc, [], original_desc, [])
         
         # Score and filter context candidates (only from pre-filtered set)
@@ -77,13 +77,10 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
             
             desc = self._read_description(img_path, use_original=True)
             if not desc:
-                continue  # Skip images without descriptions
+                # Reject task if any candidate lacks description
+                return (input_path, original_desc, [], original_desc, [])
             
-            # Calculate relevance score
-            score = self._calculate_relevance_score(
-                get_image_metadata(input_path),
-                target_metadata
-            )
+            desc_count += 1
             
             if score[1] < float('inf'):  # Check max value isn't infinity
                 context_candidates.append((score, img_path, desc, desc))
@@ -92,22 +89,6 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         # Return both full descriptions (for debug) and content-only (for prompt)
         context_full_descs = [full_desc for _, _, full_desc, _ in context_candidates[:self.max_context_items]]
         context_descriptions = [desc for _, _, _, desc in context_candidates[:self.max_context_items]]
-        
-        # Debug: show first few and last few selected items with their scores and dates
-        if context_candidates:
-            print(f"DEBUG: Found {found_count} images, {desc_count} with descriptions")
-            print(f"DEBUG: Selecting {len(context_descriptions)} items (top {self.max_context_items})")
-            if len(context_candidates) > 0:
-                for i, (score_range, path, _, _) in enumerate(context_candidates[:3]):
-                    rel = os.path.relpath(path, self.input_dir) if self.input_dir else path
-                    min_s, max_s = score_range
-                    print(f"  [{i}] score={min_s:.0f}-{max_s:.0f} (1st) {rel}")
-                if len(context_candidates) > 6:
-                    print(f"  ...")
-                for i, (score_range, path, _, _) in enumerate(context_candidates[-3:], len(context_candidates)-3):
-                    rel = os.path.relpath(path, self.input_dir) if self.input_dir else path
-                    min_s, max_s = score_range
-                    print(f"  [{i}] score={min_s:.0f}-{max_s:.0f} (last) {rel}")
         
         return (input_path, original_desc, context_descriptions, original_desc, context_full_descs)
     

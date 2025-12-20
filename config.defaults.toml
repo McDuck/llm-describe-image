@@ -38,7 +38,7 @@ context_item_max_length = 1000  # Reduced from 3000 to fit more items within cha
 # Maximum number of context items to include in prompt
 max_context_in_prompt = 30  # Increased from 20
 # Prompt template with placeholders: {context_section}, {original_description}
-prompt = "{context_section}Originele beschrijving van de huidige foto:\n{original_description}\n\nVerbeter de beschrijving van de foto aan de hand van de context."
+prompt = "{context_section}Originele beschrijving van de huidige foto:\n{original_description}\n\nVerbeter de beschrijving van de foto door logische, aannemelijke context af te leiden uit beschrijvingen uit de context. Behoud zichtbare elementen, voeg alleen goed onderbouwde interpretaties toe en vermijd speculatie. Geef één natuurlijke, vloeiende beschrijving van de foto."
 context_window_days = 10  # Number of days before/after to look for context images
 max_context_items = 100  # Maximum number of context items to gather
 max_context_length = 8000  # Maximum total characters for all context - increased from 5000

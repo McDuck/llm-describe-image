@@ -134,11 +134,14 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
                 self._write_debug_input(image_path, full_prompt)
             
             # Run LLM inference (text-only, no image)
-            enhanced_desc = self.backend.respond(self.model, full_prompt)
-
+            raw_output = self.backend.respond(self.model, full_prompt)
+            
             # Write debug output file if requested (raw LLM output with <think> tags)
             if self.debug:
                 self._write_debug_output(image_path, raw_output)
+            
+            # Clean up output: remove <think>...</think> tags and fix escaped newlines
+            enhanced_desc = self._clean_output(raw_output)
             
             return (image_path, enhanced_desc)
             
@@ -151,6 +154,21 @@ class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
                 except (ValueError, TypeError):
                     pass
             raise Exception(f"Enhancement failed for {rel_path}: {str(e)}")    
+    def _clean_output(self, text: str) -> str:
+        """
+        Clean LLM output:
+        - Remove <think>...</think> tags (reasoning blocks)
+        """
+        import re
+        
+        # Remove <think>...</think> blocks (including multiline)
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        
+        # Clean up extra whitespace but preserve paragraph breaks
+        text = text.strip()
+        
+        return text
+    
     def _write_debug_input(self, image_path: str, full_prompt: str) -> None:
         """Write debug input file with the full LLM prompt that was sent."""
         if not self.output_dir:

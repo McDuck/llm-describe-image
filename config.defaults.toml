@@ -12,9 +12,7 @@ extensions = [".jpg", ".jpeg", ".png", ".webp"]
 
 [metadata]
 # Metadata extraction settings
-extract_gps = true  # Extract GPS coordinates from EXIF data
 reverse_geocode_gps = false  # Reverse geocode GPS to human-readable location (requires geopy)
-gps_decimal_places = 6  # Decimal places for GPS coordinates display
 
 [model]
 # Model configuration

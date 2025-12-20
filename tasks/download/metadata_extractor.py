@@ -311,10 +311,17 @@ def get_image_metadata(image_path: str) -> dict:
                         metadata['location'] = gps_location
                         lat, lon = gps_location
                         metadata['location_str'] = f"{lat:.6f}, {lon:.6f}"
-                        # Try to reverse geocode to human-readable address
-                        address = reverse_geocode_location(lat, lon)
-                        if address:
-                            metadata['location_address'] = address
+                        # Try to reverse geocode to human-readable address (if configured)
+                        try:
+                            from config_loader import _config
+                            reverse_geocode_enabled = _config.get("metadata", {}).get("reverse_geocode_gps", True)
+                        except:
+                            reverse_geocode_enabled = False
+                        
+                        if reverse_geocode_enabled:
+                            address = reverse_geocode_location(lat, lon)
+                            if address:
+                                metadata['location_address'] = address
         except Exception as e:
             pass
     

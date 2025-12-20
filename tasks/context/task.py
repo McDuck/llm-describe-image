@@ -87,8 +87,8 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
             
             # Calculate relevance score
             score = self._calculate_relevance_score(
-                input_path, target_datetime, target_dir, target_filename,
-                img_path, self._get_metadata(img_path)
+                get_image_metadata(input_path),
+                target_metadata
             )
             
             if score > 0:
@@ -216,57 +216,31 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
     
     def _calculate_relevance_score(
         self,
-        target_path: str,
-        target_datetime: Optional[datetime],
-        target_dir: str,
-        target_filename: str,
-        candidate_path: str,
+        target_metadata: Dict[str, Any],
         candidate_metadata: Dict[str, Any]
-    ) -> float:
+    ) -> Tuple[float, float]:
         """
-        Calculate relevance score for a context candidate.
-        Higher score = more relevant context.
+        Calculate relevance score range (min, max) for a context candidate.
+        Based only on temporal proximity (time difference between images).
+        Returns: (min_score, max_score) tuple representing score range.
+        Accounts for datetime uncertainty from both target and candidate images.
         """
-        score = 0.0
+        target_datetime = target_metadata.get('datetime')
+        target_datetime_min = target_metadata.get('datetime_min')
+        target_datetime_max = target_metadata.get('datetime_max')
+        
         candidate_datetime = candidate_metadata.get('datetime')
-        candidate_dir = os.path.dirname(candidate_path)
-        candidate_filename = os.path.basename(candidate_path)
+        candidate_datetime_min = candidate_metadata.get('datetime_min')
+        candidate_datetime_max = candidate_metadata.get('datetime_max')
         
-        # Directory similarity (strongest signal)
-        if candidate_dir == target_dir:
-            score += 100.0  # Same directory
-        elif candidate_dir.startswith(target_dir) or target_dir.startswith(candidate_dir):
-            score += 50.0  # Parent/child directory
-        else:
-            # Count common path components
-            target_parts = target_dir.split(os.sep)
-            candidate_parts = candidate_dir.split(os.sep)
-            common = sum(1 for a, b in zip(target_parts, candidate_parts) if a == b)
-            score += common * 5.0
-        
-        # Temporal proximity (if both have datetime)
+        # Only temporal proximity scoring
         if target_datetime and candidate_datetime:
-            time_diff = abs((target_datetime - candidate_datetime).total_seconds())
-            days_diff = time_diff / 86400.0  # Convert to days
-            
-            if days_diff <= self.context_window_days:
-                # Within window: score decreases with distance
-                temporal_score = 50.0 * (1.0 - (days_diff / self.context_window_days))
-                score += temporal_score
-            else:
-                # Outside window: return 0 to exclude
-                return 0.0
-        
-        # Filename similarity (weak signal but helpful)
-        # Strip extensions and numbers for base comparison
-        import re
-        target_base = re.sub(r'\d+', '', os.path.splitext(target_filename)[0])
-        candidate_base = re.sub(r'\d+', '', os.path.splitext(candidate_filename)[0])
-        
-        if target_base and candidate_base:
-            # Simple character overlap
-            common_chars = set(target_base.lower()) & set(candidate_base.lower())
-            if common_chars:
-                score += len(common_chars) * 0.5
-        
-        return score
+            # Use datetime ranges for both target and candidate for accurate uncertainty bounds
+            # Min score: shortest possible distance (target_max to candidate_min)
+            # Max score: longest possible distance (target_min to candidate_max)
+            time_diff_min = abs((target_datetime_max - candidate_datetime_min).total_seconds())
+            time_diff_max = abs((target_datetime_min - candidate_datetime_max).total_seconds())
+            return (time_diff_min, time_diff_max)
+        else:
+            # No datetime available: exclude
+            return (float('inf'), float('inf'))

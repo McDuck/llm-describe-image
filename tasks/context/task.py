@@ -157,8 +157,6 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         
         Returns: list of image paths in natural sort order around the target file
         """
-            return []
-        
         try:
             from config_loader import DEFAULT_IMAGE_EXTENSIONS
             

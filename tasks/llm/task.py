@@ -77,10 +77,6 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Tuple[str, str, Dict[str, Any]]])
             
             location_value = metadata.get('location_str', "")
             camera_value = metadata.get('camera', "")
-            focal_length_value = metadata.get('focal_length', "")
-            aperture_value = metadata.get('aperture', "")
-            iso_value = metadata.get('iso', "")
-            shutter_speed_value = metadata.get('shutter_speed', "")
             filename_value = metadata.get('filename', "")
             
             # Format prompt with metadata placeholders
@@ -89,10 +85,6 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Tuple[str, str, Dict[str, Any]]])
                     datetime=datetime_value,
                     location=location_value,
                     camera=camera_value,
-                    focal_length=focal_length_value,
-                    aperture=aperture_value,
-                    iso=iso_value,
-                    shutter_speed=shutter_speed_value,
                     filename=filename_value
                 )
             except (KeyError, ValueError):

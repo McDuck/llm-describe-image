@@ -17,11 +17,11 @@ backend = "lmstudio"
 [describe]
 # Describe-image pipeline settings
 model = "qwen/qwen3-vl-8b"
-# Prompt template with placeholders: {filename}, {datetime}, {location}, {camera}, {focal_length}, {aperture}, {iso}, {shutter_speed}
-prompt = "Context:\nFile name: {filename}\nDatumtijd: {datetime}\nLocatie: {location}\nCamera: {camera}\n\nOpdracht: Beschrijf de foto in het Nederlands."
+# Prompt template with placeholders: {filename}, {datetime}, {location}, {camera}
+prompt = "Context:\nBestandsnaam: {filename}\nDatumtijd: {datetime}\nLocatie: {location}\nCamera: {camera}\n\nOpdracht: Beschrijf de foto in het Nederlands. Geef geen informatie terug over context bestandsnaam, datumtijd, locatie en camera, maar als nodig gebruik die informatie wel."
 # Output format template for describe pipeline
-# Available placeholders: {datetime}, {location}, {content}, {filename}
-output_format = "Datum tijd: {datetime}\nLocatie: {location}\nBeschrijving:\n{content}"
+# Available placeholders: {datetime}, {location}, {content}, {filename}, {camera}
+output_format = "Bestandsnaam: {filename}\nDatumtijd: {datetime}\nLocatie: {location}\nCamera: {camera}\n\nBeschrijving:\n{content}"
 
 [enhancement]
 # Context enhancement pipeline settings
@@ -41,8 +41,8 @@ prompt = "{context_section}Originele beschrijving van de huidige foto:\n{origina
 context_window_days = 10  # Number of days before/after to look for context images
 max_context_items = 100  # Maximum number of context items to gather
 # Output format template for enhancement pipeline
-# Available placeholders: {datetime}, {location}, {content}, {filename}, {original_content}
-output_format = "Datum tijd: {datetime}\nLocatie: {location}\nVerbeterde beschrijving:\n{content}"
+# Available placeholders: {datetime}, {location}, {content}, {filename}, {camera}
+output_format = "Bestandsnaam: {filename}\nDatum tijd: {datetime}\nLocatie: {location}\nVerbeterde beschrijving:\n{content}"
 
 [sorting]
 # Sort order: natural-desc, natural-asc, name-desc, name-asc
@@ -68,7 +68,7 @@ failed = false
 
 [output]
 # Output format template
-# Available placeholders: {datetime}, {location}, {content}, {filename}
+# Available placeholders: {datetime}, {location}, {content}, {filename}, {camera}
 format = "Datum tijd: {datetime}\nLocatie: {location}\nBeschrijving:\n{content}"
 
 [ui]

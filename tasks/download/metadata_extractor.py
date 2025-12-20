@@ -160,32 +160,30 @@ def reverse_geocode_location(latitude: float, longitude: float) -> Optional[str]
     """
     Reverse geocode GPS coordinates to human-readable location name with landmarks/businesses.
     Returns location name (address, city, landmark, business, etc.) or None if unavailable.
+    Raises exception on errors to be handled by caller.
     """
-    try:
-        geolocator = Nominatim(user_agent="metadata_extractor")
-        location = geolocator.reverse(f"{latitude}, {longitude}", language='en', zoom=18, addressdetails=True)
-        if location:
-            address = location.address
-            
-            # Try to extract landmark/business info from the address
-            # Nominatim includes nearby POIs in detailed results
-            raw = location.raw if hasattr(location, 'raw') else {}
-            address_parts = raw.get('address', {}) if isinstance(raw, dict) else {}
-            
-            # Extract all address components as POI info
-            poi_info = []
-            excluded_keys = {'country_code', 'country', 'state', 'county', 'city', 'town', 'village', 'postcode', 'road', 'house_number'}
-            for key, value in address_parts.items():
-                if key not in excluded_keys and value:
-                    poi_info.append(f"{key}: {value}")
-            
-            if poi_info:
-                full_info = address + " | " + ", ".join(poi_info)
-                return full_info
-            
-            return address
-    except Exception as e:
-        pass
+    geolocator = Nominatim(user_agent="metadata_extractor")
+    location = geolocator.reverse(f"{latitude}, {longitude}", language='en', zoom=18, addressdetails=True)
+    if location:
+        address = location.address
+        
+        # Try to extract landmark/business info from the address
+        # Nominatim includes nearby POIs in detailed results
+        raw = location.raw if hasattr(location, 'raw') else {}
+        address_parts = raw.get('address', {}) if isinstance(raw, dict) else {}
+        
+        # Extract all address components as POI info
+        poi_info = []
+        excluded_keys = {'country_code', 'country', 'state', 'county', 'city', 'town', 'village', 'postcode', 'road', 'house_number'}
+        for key, value in address_parts.items():
+            if key not in excluded_keys and value:
+                poi_info.append(f"{key}: {value}")
+        
+        if poi_info:
+            full_info = address + " | " + ", ".join(poi_info)
+            return full_info
+        
+        return address
     
     return None
 
@@ -202,6 +200,7 @@ def get_image_metadata(image_path: str) -> dict:
     - datetime_source: 'exif', 'filename_or_path', or None
     - location: (latitude, longitude) tuple or None
     - location_str: formatted location string with coordinates and optional reverse-geocoded address
+    - location_error: error message if reverse geocoding failed (e.g., timeout), or None if successful
     - camera: camera make/model or None
     - focal_length: focal length string or None
     - aperture: aperture (f-stop) string or None
@@ -216,6 +215,7 @@ def get_image_metadata(image_path: str) -> dict:
         'datetime_source': None,
         'location': None,
         'location_str': None,
+        'location_error': None,
         'camera': None,
         'focal_length': None,
         'aperture': None,
@@ -318,10 +318,14 @@ def get_image_metadata(image_path: str) -> dict:
                             reverse_geocode_enabled = False
                         
                         if reverse_geocode_enabled:
-                            address = reverse_geocode_location(lat, lon)
-                            if address:
-                                # Merge address with coordinates
-                                metadata['location_str'] = f"{lat:.6f}, {lon:.6f} | {address}"
+                            try:
+                                address = reverse_geocode_location(lat, lon)
+                                if address:
+                                    # Merge address with coordinates
+                                    metadata['location_str'] = f"{lat:.6f}, {lon:.6f} | {address}"
+                            except Exception as e:
+                                # Mark location geocoding as error
+                                metadata['location_error'] = str(type(e).__name__) + ": " + str(e)
     except Exception as e:
         pass
     

@@ -58,8 +58,10 @@ class EnhanceByContextPipeline(Pipeline):
             "kwargs_builder": lambda self: {
                 "input_dir": self.input_dir,
                 "output_dir": self.output_dir,
-                "retry_failed": False,
-                "output_suffix": ".txt"  # Check for ORIGINAL description, not context-enhanced
+                "skip_all": self.skip_all,
+                "retry_failed": self.retry_failed,
+                "output_suffix": ".enhanced.txt",
+                "check_input_exists": True
             }
         },
         {

@@ -16,79 +16,107 @@ try:
 except ImportError:
     PILLOW_AVAILABLE = False
 
+try:
+    from geopy.geocoders import Nominatim  # type: ignore
+    GEOPY_AVAILABLE = True
+except ImportError:
+    GEOPY_AVAILABLE = False
 
-def extract_datetime_from_exif(image_path: str) -> Optional[datetime]:
-    """Extract datetime from EXIF data."""
-    if not PILLOW_AVAILABLE:
-        return None
+
+def extract_datetime_from_path_or_filename(file_path: str) -> Optional[Tuple[datetime, datetime]]:
+    """
+    Extract datetime range from file path or filename patterns.
+    Returns (min_datetime, max_datetime) tuple representing possible time range based on precision.
     
-    try:
-        with Image.open(image_path) as img:
-            exif_data = img._getexif()
-            if not exif_data:
-                return None
-            
-            # Try different datetime tags
-            for tag_id in [36867, 36868, 306]:  # DateTimeOriginal, DateTimeDigitized, DateTime
-                if tag_id in exif_data:
-                    datetime_str = exif_data[tag_id]
-                    # Format: "YYYY:MM:DD HH:MM:SS"
-                    try:
-                        return datetime.strptime(datetime_str, "%Y:%m:%d %H:%M:%S")
-                    except (ValueError, TypeError):
-                        continue
-    except Exception:
-        pass
+    Examples:
+    - Full timestamp "20191114_122944" -> exact time: (2019-11-14 12:29:44, 2019-11-14 12:29:44)
+    - Date only "2019-11-14" -> full day range: (2019-11-14 00:00:00, 2019-11-14 23:59:59)
+    - Directory path "2022/2022-01/2022-01-03/" -> full day: (2022-01-03 00:00:00, 2022-01-03 23:59:59)
+    """
+    from datetime import timedelta
     
-    return None
-
-
-def extract_datetime_from_filename(filename: str) -> Optional[datetime]:
-    """Extract datetime from filename patterns like 20191114_122944 or 2019-11-14."""
-    # Pattern: YYYYMMDD_HHMMSS (e.g., 20191114_122944)
-    pattern1 = r'(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})'
+    # Try filename first
+    filename = os.path.basename(file_path)
+    
+    # Pattern: YYYYMMDD_HHMMSS or YYYYMMDDHHMMSS (e.g., 20191114_122944 or 20191114122944)
+    # Exact timestamp - return same min/max
+    pattern1 = r'(\d{4})(\d{2})(\d{2})[_\-]?([0-2][0-9])([0-5][0-9])([0-5][0-9])'
     match = re.search(pattern1, filename)
     if match:
         try:
             year, month, day, hour, minute, second = map(int, match.groups())
-            return datetime(year, month, day, hour, minute, second)
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                dt = datetime(year, month, day, hour, minute, second)
+                return (dt, dt)  # Exact time known
         except (ValueError, TypeError):
             pass
     
-    # Pattern: YYYY-MM-DD (e.g., 2019-11-14)
-    pattern2 = r'(\d{4})-(\d{2})-(\d{2})'
+    # Pattern: YYYY-MM-DD or YYYY_MM_DD in filename (e.g., 2019-11-14)
+    # Date only - return full day range
+    pattern2 = r'[\-_/]([1-2][0-9]{3})([0-1][0-9])([0-3][0-9])[\-_/]'
     match = re.search(pattern2, filename)
     if match:
         try:
             year, month, day = map(int, match.groups())
-            return datetime(year, month, day)
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                min_dt = datetime(year, month, day, 0, 0, 0)
+                max_dt = datetime(year, month, day, 23, 59, 59)
+                return (min_dt, max_dt)
         except (ValueError, TypeError):
             pass
     
-    # Pattern: YYYYMMDD (e.g., 20191114)
-    pattern3 = r'(\d{4})(\d{2})(\d{2})'
+    # Pattern: YYYYMMDD at start of filename (e.g., 20191114)
+    # Date only - return full day range
+    pattern3 = r'^([1-2][0-9]{3})([0-1][0-9])([0-3][0-9])'
     match = re.search(pattern3, filename)
     if match:
         try:
             year, month, day = map(int, match.groups())
-            return datetime(year, month, day)
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                min_dt = datetime(year, month, day, 0, 0, 0)
+                max_dt = datetime(year, month, day, 23, 59, 59)
+                return (min_dt, max_dt)
         except (ValueError, TypeError):
             pass
     
-    return None
-
-
-def extract_datetime_from_path(file_path: str) -> Optional[datetime]:
-    """Extract datetime from directory names in path."""
-    # Check all directory names in the path
+    # Fallback to directory names in path (deepest first)
+    # Date only from directories - return full day range
     parts = file_path.split(os.sep)
-    
-    for part in reversed(parts):  # Start from deepest directory
-        dt = extract_datetime_from_filename(part)
-        if dt:
-            return dt
+    for part in reversed(parts[:-1]):  # Skip filename, check directories
+        # Try YYYYMMDD pattern in directory
+        match = re.search(pattern3, part)
+        if match:
+            try:
+                year, month, day = map(int, match.groups())
+                if 1 <= month <= 12 and 1 <= day <= 31:
+                    min_dt = datetime(year, month, day, 0, 0, 0)
+                    max_dt = datetime(year, month, day, 23, 59, 59)
+                    return (min_dt, max_dt)
+            except (ValueError, TypeError):
+                pass
+        
+        # Try YYYY-MM-DD pattern in directory
+        match = re.search(r'^([1-2][0-9]{3})-([0-1][0-9])-([0-3][0-9])', part)
+        if match:
+            try:
+                year, month, day = map(int, match.groups())
+                if 1 <= month <= 12 and 1 <= day <= 31:
+                    min_dt = datetime(year, month, day, 0, 0, 0)
+                    max_dt = datetime(year, month, day, 23, 59, 59)
+                    return (min_dt, max_dt)
+            except (ValueError, TypeError):
+                pass
     
     return None
+
+
+def extract_datetime_from_path(file_path: str) -> Optional[Tuple[datetime, datetime]]:
+    """
+    Deprecated: use extract_datetime_from_path_or_filename instead.
+    This function is kept for backwards compatibility.
+    Returns (min_datetime, max_datetime) tuple.
+    """
+    return extract_datetime_from_path_or_filename(file_path)
 
 
 def extract_gps_location(image_path: str) -> Optional[Tuple[float, float]]:
@@ -141,36 +169,63 @@ def extract_gps_location(image_path: str) -> Optional[Tuple[float, float]]:
     return None
 
 
+def reverse_geocode_location(latitude: float, longitude: float) -> Optional[str]:
+    """
+    Reverse geocode GPS coordinates to human-readable location name.
+    Returns location name (address, city, landmark, etc.) or None if unavailable.
+    Requires geopy package: pip install geopy
+    """
+    if not GEOPY_AVAILABLE:
+        return None
+    
+    try:
+        geolocator = Nominatim(user_agent="llm-describe-image")
+        location = geolocator.reverse(f"{latitude}, {longitude}", language='en')
+        if location:
+            return location.address
+    except Exception:
+        pass
+    
+    return None
+
+
+
 def get_image_metadata(image_path: str) -> dict:
     """
-    Extract all relevant metadata from image.
+    Extract all relevant metadata from image with single file open.
     
     Returns dict with:
-    - datetime: datetime object or None
-    - datetime_source: 'exif', 'filename', 'path', or None
+    - datetime: datetime object (using min of range) or None
+    - datetime_min: earliest possible datetime from filename/path or None
+    - datetime_max: latest possible datetime from filename/path or None
+    - datetime_source: 'exif', 'filename_or_path', or None
     - location: (latitude, longitude) tuple or None
     - location_str: formatted location string or None
+    - location_address: reverse-geocoded address or None
     - camera: camera make/model or None
     - focal_length: focal length string or None
     - aperture: aperture (f-stop) string or None
     - iso: ISO value string or None
     - shutter_speed: shutter speed string or None
-    - filename: base filename without extension
+    - filename: full filename with extension
     """
     metadata = {
         'datetime': None,
+        'datetime_min': None,
+        'datetime_max': None,
         'datetime_source': None,
         'location': None,
         'location_str': None,
+        'location_address': None,
         'camera': None,
         'focal_length': None,
         'aperture': None,
         'iso': None,
         'shutter_speed': None,
-        'filename': os.path.splitext(os.path.basename(image_path))[0]
+        'filename': os.path.basename(image_path)
     }
     
-    # Extract camera and settings from EXIF
+    # Extract all EXIF data in a single file open
     if PILLOW_AVAILABLE:
         try:
             with Image.open(image_path) as img:
@@ -189,60 +244,89 @@ def get_image_metadata(image_path: str) -> dict:
                     # Focal length (tag 37386)
                     if 37386 in exif_data:
                         focal = exif_data[37386]
-                        if isinstance(focal, tuple):
-                            metadata['focal_length'] = f"{focal[0]/focal[1]:.1f}mm"
-                        else:
-                            metadata['focal_length'] = f"{focal}mm"
+                        try:
+                            # Convert IFDRational to float first
+                            focal_value = float(focal) if hasattr(focal, '__float__') else (focal[0]/focal[1] if isinstance(focal, tuple) else focal)
+                            metadata['focal_length'] = f"{focal_value:.1f}mm"
+                        except (TypeError, ValueError, ZeroDivisionError):
+                            pass
                     
                     # Aperture/F-number (tag 33437)
                     if 33437 in exif_data:
                         aperture = exif_data[33437]
-                        if isinstance(aperture, tuple):
-                            metadata['aperture'] = f"f/{aperture[0]/aperture[1]:.1f}"
-                        else:
-                            metadata['aperture'] = f"f/{aperture:.1f}"
+                        try:
+                            # Convert IFDRational to float first
+                            aperture_value = float(aperture) if hasattr(aperture, '__float__') else (aperture[0]/aperture[1] if isinstance(aperture, tuple) else aperture)
+                            metadata['aperture'] = f"f/{aperture_value:.1f}"
+                        except (TypeError, ValueError, ZeroDivisionError):
+                            pass
                     
                     # ISO (tag 34855)
                     if 34855 in exif_data:
-                        metadata['iso'] = f"ISO {exif_data[34855]}"
+                        try:
+                            iso_value = exif_data[34855]
+                            metadata['iso'] = f"ISO {int(iso_value)}"
+                        except (TypeError, ValueError):
+                            pass
                     
                     # Shutter speed (tag 33434)
                     if 33434 in exif_data:
                         shutter = exif_data[33434]
-                        if isinstance(shutter, tuple):
-                            if shutter[0] < shutter[1]:
-                                metadata['shutter_speed'] = f"1/{shutter[1]//shutter[0]}s"
+                        try:
+                            # Convert IFDRational to float first
+                            if hasattr(shutter, '__float__'):
+                                shutter_value = float(shutter)
+                                if shutter_value < 1:
+                                    metadata['shutter_speed'] = f"1/{int(1/shutter_value)}s"
+                                else:
+                                    metadata['shutter_speed'] = f"{shutter_value:.1f}s"
+                            elif isinstance(shutter, tuple):
+                                shutter_value = shutter[0] / shutter[1]
+                                if shutter_value < 1:
+                                    metadata['shutter_speed'] = f"1/{int(1/shutter_value)}s"
+                                else:
+                                    metadata['shutter_speed'] = f"{shutter_value:.1f}s"
                             else:
-                                metadata['shutter_speed'] = f"{shutter[0]/shutter[1]:.1f}s"
-                        else:
-                            metadata['shutter_speed'] = f"{shutter}s"
-        except Exception:
+                                metadata['shutter_speed'] = f"{shutter}s"
+                        except (TypeError, ValueError, ZeroDivisionError):
+                            pass
+                    
+                    # Extract datetime from EXIF (tags 36867, 36868, 306)
+                    for tag_id in [36867, 36868, 306]:  # DateTimeOriginal, DateTimeDigitized, DateTime
+                        if tag_id in exif_data:
+                            datetime_str = exif_data[tag_id]
+                            try:
+                                dt = datetime.strptime(datetime_str, "%Y:%m:%d %H:%M:%S")
+                                metadata['datetime'] = dt
+                                metadata['datetime_min'] = dt  # EXIF is exact - same min/max
+                                metadata['datetime_max'] = dt
+                                metadata['datetime_source'] = 'exif'
+                                break
+                            except (ValueError, TypeError):
+                                continue
+                    
+                    # Extract GPS location
+                    gps_location = extract_gps_location(image_path)
+                    if gps_location:
+                        metadata['location'] = gps_location
+                        lat, lon = gps_location
+                        metadata['location_str'] = f"{lat:.6f}, {lon:.6f}"
+                        # Try to reverse geocode to human-readable address
+                        address = reverse_geocode_location(lat, lon)
+                        if address:
+                            metadata['location_address'] = address
+        except Exception as e:
             pass
     
-    # Try EXIF datetime first
-    dt = extract_datetime_from_exif(image_path)
-    if dt:
-        metadata['datetime'] = dt
-        metadata['datetime_source'] = 'exif'
-    else:
-        # Try filename
-        filename = os.path.basename(image_path)
-        dt = extract_datetime_from_filename(filename)
-        if dt:
-            metadata['datetime'] = dt
-            metadata['datetime_source'] = 'filename'
-        else:
-            # Try path
-            dt = extract_datetime_from_path(image_path)
-            if dt:
-                metadata['datetime'] = dt
-                metadata['datetime_source'] = 'path'
-    
-    # Extract GPS location
-    location = extract_gps_location(image_path)
-    if location:
-        metadata['location'] = location
-        lat, lon = location
-        metadata['location_str'] = f"{lat:.6f}, {lon:.6f}"
+    # Fallback to path/filename for datetime if not found in EXIF
+    if not metadata['datetime']:
+        dt_range = extract_datetime_from_path_or_filename(image_path)
+        if dt_range:
+            # Store both min and max for temporal uncertainty awareness
+            min_dt, max_dt = dt_range
+            metadata['datetime'] = min_dt  # Use min as primary (earliest possible)
+            metadata['datetime_min'] = min_dt
+            metadata['datetime_max'] = max_dt
+            metadata['datetime_source'] = 'filename_or_path'
     
     return metadata

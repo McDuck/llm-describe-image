@@ -8,19 +8,9 @@ import os
 import re
 from typing import Optional, Tuple
 from datetime import datetime
-
-try:
-    from PIL import Image  # type: ignore
-    from PIL.ExifTags import TAGS, GPSTAGS  # type: ignore
-    PILLOW_AVAILABLE = True
-except ImportError:
-    PILLOW_AVAILABLE = False
-
-try:
-    from geopy.geocoders import Nominatim  # type: ignore
-    GEOPY_AVAILABLE = True
-except ImportError:
-    GEOPY_AVAILABLE = False
+from PIL import Image  # type: ignore
+from PIL.ExifTags import TAGS, GPSTAGS  # type: ignore
+from geopy.geocoders import Nominatim  # type: ignore
 
 
 def extract_datetime_from_path_or_filename(file_path: str) -> Optional[Tuple[datetime, datetime]]:
@@ -121,9 +111,6 @@ def extract_datetime_from_path(file_path: str) -> Optional[Tuple[datetime, datet
 
 def extract_gps_location(image_path: str) -> Optional[Tuple[float, float]]:
     """Extract GPS coordinates from EXIF data. Returns (latitude, longitude)."""
-    if not PILLOW_AVAILABLE:
-        return None
-    
     try:
         with Image.open(image_path) as img:
             exif_data = img._getexif()
@@ -171,19 +158,33 @@ def extract_gps_location(image_path: str) -> Optional[Tuple[float, float]]:
 
 def reverse_geocode_location(latitude: float, longitude: float) -> Optional[str]:
     """
-    Reverse geocode GPS coordinates to human-readable location name.
-    Returns location name (address, city, landmark, etc.) or None if unavailable.
-    Requires geopy package: pip install geopy
+    Reverse geocode GPS coordinates to human-readable location name with landmarks/businesses.
+    Returns location name (address, city, landmark, business, etc.) or None if unavailable.
     """
-    if not GEOPY_AVAILABLE:
-        return None
-    
     try:
-        geolocator = Nominatim(user_agent="llm-describe-image")
-        location = geolocator.reverse(f"{latitude}, {longitude}", language='en')
+        geolocator = Nominatim(user_agent="metadata_extractor")
+        location = geolocator.reverse(f"{latitude}, {longitude}", language='en', zoom=18, addressdetails=True)
         if location:
-            return location.address
-    except Exception:
+            address = location.address
+            
+            # Try to extract landmark/business info from the address
+            # Nominatim includes nearby POIs in detailed results
+            raw = location.raw if hasattr(location, 'raw') else {}
+            address_parts = raw.get('address', {}) if isinstance(raw, dict) else {}
+            
+            # Extract all address components as POI info
+            poi_info = []
+            excluded_keys = {'country_code', 'country', 'state', 'county', 'city', 'town', 'village', 'postcode', 'road', 'house_number'}
+            for key, value in address_parts.items():
+                if key not in excluded_keys and value:
+                    poi_info.append(f"{key}: {value}")
+            
+            if poi_info:
+                full_info = address + " | " + ", ".join(poi_info)
+                return full_info
+            
+            return address
+    except Exception as e:
         pass
     
     return None
@@ -200,8 +201,7 @@ def get_image_metadata(image_path: str) -> dict:
     - datetime_max: latest possible datetime from filename/path or None
     - datetime_source: 'exif', 'filename_or_path', or None
     - location: (latitude, longitude) tuple or None
-    - location_str: formatted location string or None
-    - location_address: reverse-geocoded address or None
+    - location_str: formatted location string with coordinates and optional reverse-geocoded address
     - camera: camera make/model or None
     - focal_length: focal length string or None
     - aperture: aperture (f-stop) string or None
@@ -216,7 +216,6 @@ def get_image_metadata(image_path: str) -> dict:
         'datetime_source': None,
         'location': None,
         'location_str': None,
-        'location_address': None,
         'camera': None,
         'focal_length': None,
         'aperture': None,
@@ -226,9 +225,8 @@ def get_image_metadata(image_path: str) -> dict:
     }
     
     # Extract all EXIF data in a single file open
-    if PILLOW_AVAILABLE:
-        try:
-            with Image.open(image_path) as img:
+    try:
+        with Image.open(image_path) as img:
                 exif_data = img._getexif()
                 if exif_data:
                     # Camera make/model (tags 271, 272)
@@ -311,6 +309,7 @@ def get_image_metadata(image_path: str) -> dict:
                         metadata['location'] = gps_location
                         lat, lon = gps_location
                         metadata['location_str'] = f"{lat:.6f}, {lon:.6f}"
+                        
                         # Try to reverse geocode to human-readable address (if configured)
                         try:
                             from config_loader import _config
@@ -321,9 +320,10 @@ def get_image_metadata(image_path: str) -> dict:
                         if reverse_geocode_enabled:
                             address = reverse_geocode_location(lat, lon)
                             if address:
-                                metadata['location_address'] = address
-        except Exception as e:
-            pass
+                                # Merge address with coordinates
+                                metadata['location_str'] = f"{lat:.6f}, {lon:.6f} | {address}"
+    except Exception as e:
+        pass
     
     # Fallback to path/filename for datetime if not found in EXIF
     if not metadata['datetime']:

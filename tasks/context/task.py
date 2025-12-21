@@ -52,8 +52,6 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         # Get metadata for target image
         from tasks.download.metadata_extractor import get_image_metadata
         target_metadata = get_image_metadata(input_path)
-        target_dir = os.path.dirname(input_path)
-        target_filename = os.path.basename(input_path)
         
         # Get candidate images from nearby folders only (not all 2300+ images)
         candidates_to_check = self._get_nearby_images(
@@ -64,23 +62,16 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         
         # If no candidates found, return with empty context
         if not candidates_to_check:
-            return (input_path, original_desc, [], original_desc, [])
+            return (input_path, original_desc, [], [])
         
         # Score and filter context candidates (only from pre-filtered set)
         context_candidates: List[Tuple[Tuple[float, float], str, str, str]] = []  # ((min_score, max_score), path, full_desc, desc_content)
         
-        found_count = 0
-        desc_count = 0
-        
         for score, img_path in candidates_to_check:
-            found_count += 1
-            
             desc = self._read_description(img_path, use_original=True)
             if not desc:
                 # Reject task if any candidate lacks description
-                return (input_path, original_desc, [], original_desc, [])
-            
-            desc_count += 1
+                return (input_path, original_desc, [], [])
             
             if score[1] < float('inf'):  # Check max value isn't infinity
                 context_candidates.append((score, img_path, desc, desc))
@@ -90,7 +81,7 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         context_full_descs = [full_desc for _, _, full_desc, _ in context_candidates[:self.max_context_items]]
         context_descriptions = [desc for _, _, _, desc in context_candidates[:self.max_context_items]]
         
-        return (input_path, original_desc, context_descriptions, original_desc, context_full_descs)
+        return (input_path, original_desc, context_descriptions, context_full_descs)
     
     def _read_description(self, image_path: str, use_original: bool = False) -> Optional[str]:
         """
@@ -160,9 +151,7 @@ class ContextTask(Task[str, Tuple[str, str, List[str]]]):
         try:
             from config_loader import DEFAULT_IMAGE_EXTENSIONS
             
-            normalized_input_path: str = os.path.normpath(input_path)
-            context_count: int = self.max_context_items // 2
-            current_dir: str = os.path.dirname(normalized_input_path)
+            current_dir: str = os.path.dirname(input_path)
             all_images: List[str] = []
             
             # Collect images >= target path by expanding from target directory upward

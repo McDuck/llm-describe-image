@@ -56,11 +56,17 @@ class SkipCheckTask(Task[str, Tuple[bool, str]]):
                 if self.input_dir and self.output_dir:
                     relative = os.path.relpath(input_path, self.input_dir)
                     output_file = os.path.join(self.output_dir, relative + self.output_suffix)
+                    error_file = os.path.join(self.output_dir, relative + self.output_suffix.replace(".txt", ".error.txt"))
                 else:
                     output_file = input_path + self.output_suffix
+                    error_file = input_path + self.output_suffix.replace(".txt", ".error.txt")
                 
                 if os.path.exists(output_file):
                     return (True, input_path)  # Skip - already enhanced
+                
+                # Check if error file exists and retry_failed is False
+                if not self.retry_failed and os.path.exists(error_file):
+                    return (True, input_path)  # Skip - previously failed
                 
                 return (False, input_path)  # Process - has input, not yet enhanced
             

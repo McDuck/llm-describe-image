@@ -23,8 +23,7 @@ from config_loader import (
 class DescribePipeline(Pipeline):
     """Pipeline for describing images using LLM."""
     
-    # Task configuration: define once, reuse for loading
-    TASK_CONFIG = [
+    PIPELINE_CONFIG = [
         {
             "name": "Discover",
             "class_name": "DiscoverTask",
@@ -34,7 +33,13 @@ class DescribePipeline(Pipeline):
                 "input_dir": self.input_dir,
                 "image_extensions": DEFAULT_IMAGE_EXTENSIONS,
                 "sort_order": os.getenv("SORT_ORDER", DEFAULT_SORT_ORDER),
-            }
+            },
+            "task": "Discover",
+            "num_threads": 1,
+            "next_task": "SkipCheck",
+            "transform": None,
+            "check_rejection": None,
+            "has_pending_queue": True,
         },
         {
             "name": "SkipCheck",
@@ -46,7 +51,13 @@ class DescribePipeline(Pipeline):
                 "output_dir": self.output_dir,
                 "skip_all": self.skip_all,
                 "retry_failed": self.retry_failed,
-            }
+            },
+            "task": "SkipCheck",
+            "num_threads_getter": "num_skip_checker_threads",
+            "next_task": "Download",
+            "transform": lambda result: result[1],  # Extract path from (bool, path)
+            "check_rejection": lambda result: result[0],  # True if should skip
+            "has_pending_queue": False,
         },
         {
             "name": "Download",
@@ -55,7 +66,13 @@ class DescribePipeline(Pipeline):
             "kwargs_builder": lambda self: {
                 "maximum": self.num_download_threads,
                 "input_dir": self.input_dir,
-            }
+            },
+            "task": "Download",
+            "num_threads_getter": "num_download_threads",
+            "next_task": "LLM",
+            "transform": None,
+            "check_rejection": None,
+            "has_pending_queue": False,
         },
         {
             "name": "LLM",
@@ -67,7 +84,13 @@ class DescribePipeline(Pipeline):
                 "prompt": os.getenv("PROMPT", DEFAULT_PROMPT),
                 "backend_name": os.getenv("BACKEND"),
                 "input_dir": self.input_dir,
-            }
+            },
+            "task": "LLM",
+            "num_threads_getter": "num_llm_threads",
+            "next_task": "Write",
+            "transform": None,
+            "check_rejection": None,
+            "has_pending_queue": False,
         },
         {
             "name": "Write",
@@ -78,45 +101,7 @@ class DescribePipeline(Pipeline):
                 "input_dir": self.input_dir,
                 "output_dir": self.output_dir,
                 "output_format": os.getenv("OUTPUT_FORMAT", DEFAULT_OUTPUT_FORMAT),
-            }
-        },
-    ]
-    
-    # Thread configuration: how tasks connect and how many threads per task
-    THREAD_CONFIG = [
-        {
-            "task": "Discover",
-            "num_threads": 1,
-            "next_task": "SkipCheck",
-            "transform": None,
-            "check_rejection": None,
-            "has_pending_queue": True,
-        },
-        {
-            "task": "SkipCheck",
-            "num_threads_getter": "num_skip_checker_threads",
-            "next_task": "Download",
-            "transform": lambda result: result[1],  # Extract path from (bool, path)
-            "check_rejection": lambda result: result[0],  # True if should skip
-            "has_pending_queue": False,
-        },
-        {
-            "task": "Download",
-            "num_threads_getter": "num_download_threads",
-            "next_task": "LLM",
-            "transform": None,
-            "check_rejection": None,
-            "has_pending_queue": False,
-        },
-        {
-            "task": "LLM",
-            "num_threads_getter": "num_llm_threads",
-            "next_task": "Write",
-            "transform": None,
-            "check_rejection": None,
-            "has_pending_queue": False,
-        },
-        {
+            },
             "task": "Write",
             "num_threads_getter": "num_write_threads",
             "next_task": None,

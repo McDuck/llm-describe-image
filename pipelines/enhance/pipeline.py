@@ -58,7 +58,7 @@ class EnhanceByContextPipeline(Pipeline):
         # Retry failed items
         self.retry_failed: bool = False
     
-    TASK_CONFIG = [
+    PIPELINE_CONFIG = [
         {
             "name": "Discover",
             "class_name": "DiscoverTask",
@@ -67,7 +67,11 @@ class EnhanceByContextPipeline(Pipeline):
                 "input_dir": self.input_dir,
                 "image_extensions": {".jpg", ".jpeg", ".png", ".webp"},
                 "sort_order": os.getenv("SORT_ORDER", DEFAULT_SORT_ORDER)
-            }
+            },
+            "task": "Discover",
+            "num_threads": 1,
+            "next_task": "SkipCheck",
+            "has_pending_queue": True
         },
         {
             "name": "SkipCheck",
@@ -80,7 +84,12 @@ class EnhanceByContextPipeline(Pipeline):
                 "retry_failed": self.retry_failed,
                 "output_suffix": ".enhanced.txt",
                 "check_input_exists": True
-            }
+            },
+            "task": "SkipCheck",
+            "num_threads_getter": "num_skip_checker_threads",
+            "next_task": "Context",
+            "transform": lambda result: result[1],  # Extract path from (should_skip, path)
+            "check_rejection": lambda result: result[0]  # Check should_skip flag
         },
         {
             "name": "Context",
@@ -91,7 +100,10 @@ class EnhanceByContextPipeline(Pipeline):
                 "output_dir": self.output_dir,
                 "context_window_days": getattr(self, 'context_window_days', 10),
                 "max_context_items": getattr(self, 'max_context_items', 20)
-            }
+            },
+            "task": "Context",
+            "num_threads_getter": "num_context_threads",
+            "next_task": "Enhance"
         },
         {
             "name": "Enhance",
@@ -110,7 +122,10 @@ class EnhanceByContextPipeline(Pipeline):
                 "max_context_length": getattr(self, 'max_context_length', 8000),
                 "model_context_length": getattr(self, 'model_context_length', 32768),
                 "debug": getattr(self, 'debug', False)
-            }
+            },
+            "task": "Enhance",
+            "num_threads_getter": "num_enhance_threads",
+            "next_task": "Write"
         },
         {
             "name": "Write",
@@ -122,35 +137,7 @@ class EnhanceByContextPipeline(Pipeline):
                 "output_format": getattr(self, 'output_format', ""),
                 "output_suffix": ".enhanced.txt",
                 "error_suffix": ".enhanced.error.txt"
-            }
-        }
-    ]
-    
-    THREAD_CONFIG = [
-        {
-            "task": "Discover",
-            "num_threads": 1,
-            "next_task": "SkipCheck",
-            "has_pending_queue": True
-        },
-        {
-            "task": "SkipCheck",
-            "num_threads_getter": "num_skip_checker_threads",
-            "next_task": "Context",
-            "transform": lambda result: result[1],  # Extract path from (should_skip, path)
-            "check_rejection": lambda result: result[0]  # Check should_skip flag
-        },
-        {
-            "task": "Context",
-            "num_threads_getter": "num_context_threads",
-            "next_task": "Enhance"
-        },
-        {
-            "task": "Enhance",
-            "num_threads_getter": "num_enhance_threads",
-            "next_task": "Write"
-        },
-        {
+            },
             "task": "Write",
             "num_threads_getter": "num_write_threads",
             "next_task": None

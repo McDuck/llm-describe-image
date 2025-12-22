@@ -25,7 +25,7 @@ class GeolocationPipeline(Pipeline):
         self.skip_all: bool = False
         self.retry_failed: bool = False
     
-    TASK_CONFIG = [
+    PIPELINE_CONFIG = [
         {
             "name": "Discover",
             "class_name": "DiscoverTask",
@@ -34,7 +34,11 @@ class GeolocationPipeline(Pipeline):
                 "input_dir": self.input_dir,
                 "image_extensions": DEFAULT_IMAGE_EXTENSIONS,
                 "sort_order": os.getenv("SORT_ORDER", DEFAULT_SORT_ORDER)
-            }
+            },
+            "task": "Discover",
+            "num_threads": 1,
+            "next_task": "SkipCheck",
+            "has_pending_queue": True
         },
         {
             "name": "SkipCheck",
@@ -47,7 +51,12 @@ class GeolocationPipeline(Pipeline):
                 "retry_failed": self.retry_failed,
                 "output_suffix": ".geocode.txt",
                 "check_input_exists": False
-            }
+            },
+            "task": "SkipCheck",
+            "num_threads_getter": "num_skip_checker_threads",
+            "next_task": "Geolocate",
+            "transform": lambda result: result[1],  # Extract path from (should_skip, path)
+            "check_rejection": lambda result: result[0]  # Check should_skip flag
         },
         {
             "name": "Geolocate",
@@ -58,7 +67,10 @@ class GeolocationPipeline(Pipeline):
                 "output_dir": self.output_dir,
                 "initial_wait_seconds": 1,
                 "max_retries": 5
-            }
+            },
+            "task": "Geolocate",
+            "num_threads_getter": "num_geolocate_threads",
+            "next_task": "Write"
         },
         {
             "name": "Write",
@@ -67,30 +79,7 @@ class GeolocationPipeline(Pipeline):
             "kwargs_builder": lambda self: {
                 "input_dir": self.input_dir,
                 "output_dir": self.output_dir,
-            }
-        }
-    ]
-    
-    THREAD_CONFIG = [
-        {
-            "task": "Discover",
-            "num_threads": 1,
-            "next_task": "SkipCheck",
-            "has_pending_queue": True
-        },
-        {
-            "task": "SkipCheck",
-            "num_threads_getter": "num_skip_checker_threads",
-            "next_task": "Geolocate",
-            "transform": lambda result: result[1],  # Extract path from (should_skip, path)
-            "check_rejection": lambda result: result[0]  # Check should_skip flag
-        },
-        {
-            "task": "Geolocate",
-            "num_threads_getter": "num_geolocate_threads",
-            "next_task": "Write"
-        },
-        {
+            },
             "task": "Write",
             "num_threads_getter": "num_write_threads",
             "next_task": None

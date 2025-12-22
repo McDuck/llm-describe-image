@@ -52,16 +52,19 @@ class Pipeline:
     
     def _load_tasks_from_config(self) -> None:
         """
-        Load task modules and create task instances from self.TASK_CONFIG.
-        Subclasses must define TASK_CONFIG and set self.tasks_dir.
+        Load task modules and create task instances from self.PIPELINE_CONFIG or self.TASK_CONFIG.
+        Supports both merged PIPELINE_CONFIG and separate TASK_CONFIG + THREAD_CONFIG.
         """
-        if not hasattr(self, 'TASK_CONFIG'):
-            raise RuntimeError(f"{self.__class__.__name__} must define TASK_CONFIG")
+        # Use PIPELINE_CONFIG if available, otherwise fall back to TASK_CONFIG
+        task_configs = getattr(self, 'PIPELINE_CONFIG', None) or getattr(self, 'TASK_CONFIG', None)
+        
+        if not task_configs:
+            raise RuntimeError(f"{self.__class__.__name__} must define PIPELINE_CONFIG or TASK_CONFIG")
         
         if not self.tasks_dir:
             raise RuntimeError(f"{self.__class__.__name__} must set self.tasks_dir")
         
-        for config in self.TASK_CONFIG:
+        for config in task_configs:
             # Load task module
             task_module = self._load_task_module(os.path.join(self.tasks_dir, config["dir"]))
             if not task_module:
@@ -272,15 +275,18 @@ class Pipeline:
     
     def _create_worker_threads(self) -> List[threading.Thread]:
         """
-        Create and start worker threads from self.THREAD_CONFIG.
-        Subclasses must define THREAD_CONFIG.
+        Create and start worker threads from self.PIPELINE_CONFIG or self.THREAD_CONFIG.
+        Supports both merged PIPELINE_CONFIG and separate TASK_CONFIG + THREAD_CONFIG.
         """
-        if not hasattr(self, 'THREAD_CONFIG'):
-            raise RuntimeError(f"{self.__class__.__name__} must define THREAD_CONFIG")
+        # Use PIPELINE_CONFIG if available, otherwise fall back to THREAD_CONFIG
+        thread_configs = getattr(self, 'PIPELINE_CONFIG', None) or getattr(self, 'THREAD_CONFIG', None)
+        
+        if not thread_configs:
+            raise RuntimeError(f"{self.__class__.__name__} must define PIPELINE_CONFIG or THREAD_CONFIG")
         
         threads: List[threading.Thread] = []
         
-        for config in self.THREAD_CONFIG:
+        for config in thread_configs:
             # Get current task
             current_task = self.get_task(config["task"])
             
@@ -341,8 +347,9 @@ class Pipeline:
         # Load tasks using generic loader
         self._load_tasks_from_config()
         
-        # Add initial items to first task
-        first_task = self.get_task(self.TASK_CONFIG[0]["name"])
+        # Add initial items to first task (get first task from either PIPELINE_CONFIG or TASK_CONFIG)
+        config = getattr(self, 'PIPELINE_CONFIG', None) or getattr(self, 'TASK_CONFIG', None)
+        first_task = self.get_task(config[0]["name"])
         first_task.add(self.input_dir)
         
         # Run the generic pipeline orchestration

@@ -9,7 +9,7 @@ def get_pipeline(pipeline_name: str) -> Optional[Pipeline]:
     Get a pipeline by name.
     
     Args:
-        pipeline_name: Name of the pipeline (e.g., 'describe', 'enhance')
+        pipeline_name: Name of the pipeline (e.g., 'describe', 'enhance', 'geolocate')
     
     Returns:
         Pipeline instance or None if not found
@@ -20,6 +20,9 @@ def get_pipeline(pipeline_name: str) -> Optional[Pipeline]:
     elif pipeline_name == "enhance":
         from pipelines.enhance import EnhanceByContextPipeline
         return EnhanceByContextPipeline()
+    elif pipeline_name == "geolocate":
+        from pipelines.geolocate import GeolocationPipeline
+        return GeolocationPipeline()
     
     return None
 
@@ -34,4 +37,5 @@ def list_pipelines() -> Dict[str, str]:
     return {
         "describe": "Describes images using LLM (Discover → SkipCheck → Download → LLM → Write)",
         "enhance": "Enhances descriptions using context from nearby images (Discover → SkipCheck → Context → Enhance → Write)",
+        "geolocate": "Reverse geocodes GPS coordinates to human-readable locations (Discover → SkipCheck → Geolocate → Write)",
     }

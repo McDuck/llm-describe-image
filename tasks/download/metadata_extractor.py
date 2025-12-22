@@ -156,6 +156,24 @@ def extract_gps_location(image_path: str) -> Optional[Tuple[float, float]]:
     return None
 
 
+def read_pregeocoded_location(image_path: str) -> Optional[str]:
+    """
+    Read pre-geocoded location from .geocode.txt file if it exists.
+    Returns the location string or None if file doesn't exist.
+    """
+    geocode_file = image_path + ".geocode.txt"
+    
+    if not os.path.exists(geocode_file):
+        return None
+    
+    try:
+        with open(geocode_file, "r", encoding="utf-8") as f:
+            location = f.read().strip()
+            return location if location else None
+    except Exception:
+        return None
+
+
 def reverse_geocode_location(latitude: float, longitude: float) -> Optional[str]:
     """
     Reverse geocode GPS coordinates to human-readable location name with landmarks/businesses.
@@ -310,22 +328,27 @@ def get_image_metadata(image_path: str) -> dict:
                         lat, lon = gps_location
                         metadata['location_str'] = f"{lat:.6f}, {lon:.6f}"
                         
-                        # Try to reverse geocode to human-readable address (if configured)
-                        try:
-                            from config_loader import _config
-                            reverse_geocode_enabled = _config.get("metadata", {}).get("reverse_geocode_gps", True)
-                        except:
-                            reverse_geocode_enabled = False
-                        
-                        if reverse_geocode_enabled:
+                        # Try to use pre-geocoded location from .geocode.txt file first
+                        pregeocoded = read_pregeocoded_location(image_path)
+                        if pregeocoded:
+                            metadata['location_str'] = f"{lat:.6f}, {lon:.6f} | {pregeocoded}"
+                        else:
+                            # Fall back to reverse geocoding if configured (deprecated in favor of geolocate pipeline)
                             try:
-                                address = reverse_geocode_location(lat, lon)
-                                if address:
-                                    # Merge address with coordinates
-                                    metadata['location_str'] = f"{lat:.6f}, {lon:.6f} | {address}"
-                            except Exception as e:
-                                # Mark location geocoding as error
-                                metadata['location_error'] = str(type(e).__name__) + ": " + str(e)
+                                from config_loader import _config
+                                reverse_geocode_enabled = _config.get("metadata", {}).get("reverse_geocode_gps", False)
+                            except:
+                                reverse_geocode_enabled = False
+                            
+                            if reverse_geocode_enabled:
+                                try:
+                                    address = reverse_geocode_location(lat, lon)
+                                    if address:
+                                        # Merge address with coordinates
+                                        metadata['location_str'] = f"{lat:.6f}, {lon:.6f} | {address}"
+                                except Exception as e:
+                                    # Mark location geocoding as error
+                                    metadata['location_error'] = str(type(e).__name__) + ": " + str(e)
     except Exception as e:
         pass
     

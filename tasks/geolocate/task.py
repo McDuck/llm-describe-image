@@ -64,7 +64,8 @@ class GeolocationTask(Task[str, Tuple[str, Optional[str]]]):
     
     def _reverse_geocode_with_retry(self, latitude: float, longitude: float, image_path: str) -> Optional[str]:
         """
-        Reverse geocode with exponential backoff for network errors (timeout, DDOS).
+        Reverse geocode with adaptive backoff for network errors (timeout, DDOS).
+        On success: reduce wait time by half. On failure: double it.
         """
         from geopy.geocoders import Nominatim
         from geopy.exc import GeopyError, GeocoderTimedOut, GeocoderUnavailable
@@ -103,18 +104,24 @@ class GeolocationTask(Task[str, Tuple[str, Optional[str]]]):
                     
                     if poi_info:
                         full_info = address + " | " + ", ".join(poi_info)
+                        # Success - reduce wait time for next attempt by this task
+                        wait_time = max(self.initial_wait_seconds, wait_time / 2)
                         return full_info
                     
+                    # Success - reduce wait time
+                    wait_time = max(self.initial_wait_seconds, wait_time / 2)
                     return address
                 
+                # Success - reduce wait time
+                wait_time = max(self.initial_wait_seconds, wait_time / 2)
                 return None
                 
             except (GeocoderTimedOut, GeocoderUnavailable, TimeoutError, ConnectionError) as e:
-                # Network error - retry with exponential backoff
+                # Network error - increase backoff for next retry
                 if attempt < self.max_retries - 1:
+                    wait_time *= 2  # Double wait time on failure
                     print(f"Network error for {rel_path} (attempt {attempt + 1}/{self.max_retries}): {type(e).__name__}. Waiting {wait_time}s before retry...")
                     time.sleep(wait_time)
-                    wait_time *= 2  # Exponential backoff
                 else:
                     # Final attempt failed
                     raise Exception(f"Geolocation timeout after {self.max_retries} attempts for {rel_path}: {str(e)}")

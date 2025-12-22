@@ -2,6 +2,25 @@
 
 import os
 from pipelines.pipeline import Pipeline
+from config_loader import (
+    DEFAULT_NUM_DISCOVER_THREADS,
+    DEFAULT_NUM_SKIP_CHECKER_THREADS,
+    DEFAULT_NUM_CONTEXT_THREADS,
+    DEFAULT_NUM_ENHANCE_THREADS,
+    DEFAULT_NUM_WRITE_THREADS,
+    DEFAULT_CONTEXT_MODEL_NAME,
+    DEFAULT_ENHANCEMENT_PROMPT,
+    DEFAULT_ENHANCEMENT_OUTPUT_FORMAT,
+    DEFAULT_CONTEXT_TEMPLATE,
+    DEFAULT_CONTEXT_ITEM_TEMPLATE,
+    DEFAULT_CONTEXT_ITEM_MAX_LENGTH,
+    DEFAULT_MAX_CONTEXT_IN_PROMPT,
+    DEFAULT_CONTEXT_WINDOW_DAYS,
+    DEFAULT_MAX_CONTEXT_ITEMS,
+    DEFAULT_MAX_CONTEXT_LENGTH,
+    DEFAULT_MODEL_CONTEXT_LENGTH,
+    DEFAULT_SORT_ORDER,
+)
 
 
 class EnhanceByContextPipeline(Pipeline):
@@ -10,26 +29,6 @@ class EnhanceByContextPipeline(Pipeline):
     def __init__(self) -> None:
         """Initialize the enhance pipeline."""
         super().__init__(name="enhance", description="Enhances descriptions using context from nearby images")
-        
-        # Thread count configuration
-        from config_loader import (
-            DEFAULT_NUM_DISCOVER_THREADS,
-            DEFAULT_NUM_SKIP_CHECKER_THREADS,
-            DEFAULT_NUM_CONTEXT_THREADS,
-            DEFAULT_NUM_ENHANCE_THREADS,
-            DEFAULT_NUM_WRITE_THREADS,
-            DEFAULT_CONTEXT_MODEL_NAME,
-            DEFAULT_ENHANCEMENT_PROMPT,
-            DEFAULT_ENHANCEMENT_OUTPUT_FORMAT,
-            DEFAULT_CONTEXT_TEMPLATE,
-            DEFAULT_CONTEXT_ITEM_TEMPLATE,
-            DEFAULT_CONTEXT_ITEM_MAX_LENGTH,
-            DEFAULT_MAX_CONTEXT_IN_PROMPT,
-            DEFAULT_CONTEXT_WINDOW_DAYS,
-            DEFAULT_MAX_CONTEXT_ITEMS,
-            DEFAULT_MAX_CONTEXT_LENGTH,
-            DEFAULT_MODEL_CONTEXT_LENGTH,
-        )
         
         self.num_discover_threads: int = DEFAULT_NUM_DISCOVER_THREADS
         self.num_skip_checker_threads: int = DEFAULT_NUM_SKIP_CHECKER_THREADS
@@ -67,7 +66,7 @@ class EnhanceByContextPipeline(Pipeline):
             "kwargs_builder": lambda self: {
                 "input_dir": self.input_dir,
                 "image_extensions": {".jpg", ".jpeg", ".png", ".webp"},
-                "sort_order": "natural-asc"
+                "sort_order": os.getenv("SORT_ORDER", DEFAULT_SORT_ORDER)
             }
         },
         {

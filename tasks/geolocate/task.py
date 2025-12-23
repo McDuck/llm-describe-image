@@ -197,13 +197,15 @@ class GeolocationWriteTask(Task[Tuple[str, Optional[str]], str]):
         else:
             # Write success output
             if content_or_error is None:
-                # No GPS data - just write empty file or skip
-                return input_path
+                # No GPS data - write "N/A" to indicate no location available
+                content = "N/A"
+            else:
+                content = content_or_error
             
             try:
                 os.makedirs(os.path.dirname(output_file), exist_ok=True)
                 with open(output_file, "w", encoding="utf-8") as f:
-                    f.write(content_or_error)
+                    f.write(content)
                 return output_file
             except Exception as e:
                 # Show relative path in error

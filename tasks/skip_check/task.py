@@ -8,20 +8,18 @@ from tasks.task import Task
 class SkipCheckTask(Task[str, Tuple[bool, str]]):
     def __init__(
         self,
-        maximum: int = 100,
-        input_dir: Optional[str] = None,
-        output_dir: Optional[str] = None,
-        skip_all: bool = False,
-        retry_failed: bool = False,
-        output_suffix: str = ".txt",
-        check_input_exists: bool = False
+        maximum: int,
+        input_dir: str,
+        output_dir: str,
+        output_dir_output_suffix: str,
+        retry_failed: bool,
+        retry: bool
     ) -> None:
         super().__init__(maximum, input_dir=input_dir)
-        self.output_dir: Optional[str] = output_dir
-        self.skip_all: bool = skip_all
+        self.output_dir: str = output_dir
         self.retry_failed: bool = retry_failed
-        self.output_suffix: str = output_suffix
-        self.check_input_exists: bool = check_input_exists
+        self.retry: bool = retry
+        self.output_dir_output_suffix: str = output_dir_output_suffix
 
     def execute(self, input_path: str) -> Tuple[bool, str]:
         """
@@ -35,57 +33,19 @@ class SkipCheckTask(Task[str, Tuple[bool, str]]):
         - True if file should be skipped
         - False if file needs processing
         """
-        # If skip_all is True, never skip anything (retry all items)
-        if self.skip_all:
-            return (False, input_path)
         
         try:
-            # For enhance pipeline: check if INPUT description exists
-            if self.check_input_exists:
-                if self.input_dir and self.output_dir:
-                    relative = os.path.relpath(input_path, self.input_dir)
-                    input_file = os.path.join(self.output_dir, relative + ".txt")
-                else:
-                    input_file = input_path + ".txt"
-                
-                # Skip if input description does NOT exist
-                if not os.path.exists(input_file):
-                    return (True, input_path)  # Skip - no description to enhance
-                
-                # Also check if already enhanced
-                if self.input_dir and self.output_dir:
-                    relative = os.path.relpath(input_path, self.input_dir)
-                    output_file = os.path.join(self.output_dir, relative + self.output_suffix)
-                    error_file = os.path.join(self.output_dir, relative + self.output_suffix.replace(".txt", ".error.txt"))
-                else:
-                    output_file = input_path + self.output_suffix
-                    error_file = input_path + self.output_suffix.replace(".txt", ".error.txt")
-                
-                if os.path.exists(output_file):
-                    return (True, input_path)  # Skip - already enhanced
-                
-                # Check if error file exists and retry_failed is False
-                if not self.retry_failed and os.path.exists(error_file):
-                    return (True, input_path)  # Skip - previously failed
-                
-                return (False, input_path)  # Process - has input, not yet enhanced
+            # Calculate file paths
+            relative_path = os.path.relpath(input_path, self.input_dir)
+            output_output_path = os.path.join(self.output_dir, relative_path + self.output_dir_output_suffix)
+            output_output_error_path = os.path.join(self.output_dir, relative_path + ".error" + self.output_dir_output_suffix)
             
-            # For describe pipeline: check if output already exists
-            # Calculate output path
-            if self.input_dir and self.output_dir:
-                relative = os.path.relpath(input_path, self.input_dir)
-                output_file = os.path.join(self.output_dir, relative + self.output_suffix)
-                error_file = os.path.join(self.output_dir, relative + self.output_suffix.replace(".txt", ".error.txt"))
-            else:
-                output_file = input_path + self.output_suffix
-                error_file = input_path + self.output_suffix.replace(".txt", ".error.txt")
-            
-            # Check if output exists
-            if os.path.exists(output_file):
+            # Skip if already processed
+            if not self.retry and os.path.exists(output_output_path):
                 return (True, input_path)  # Skip - already processed
             
             # Check if error file exists and retry_failed is False
-            if not self.retry_failed and os.path.exists(error_file):
+            if not self.retry_failed and os.path.exists(output_output_error_path):
                 return (True, input_path)  # Skip - previously failed
             
             return (False, input_path)  # Process

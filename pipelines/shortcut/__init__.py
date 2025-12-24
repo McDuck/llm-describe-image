@@ -1,4 +1,4 @@
-"""Geolocation Pipeline: Discover → Geolocate → Write"""
+"""Shortcut pipeline for creating file links to original images."""
 
 import os
 from pipelines.pipeline import Pipeline
@@ -9,21 +9,20 @@ from config_loader import (
 )
 
 
-class GeolocationPipeline(Pipeline):
-    """Pipeline for reverse geocoding GPS coordinates to human-readable locations."""
+class ShortcutPipeline(Pipeline):
+    """Pipeline for creating Windows shortcuts linking to original images."""
     
     def __init__(self) -> None:
-        """Initialize the geolocation pipeline."""
-        super().__init__(name="geolocate", description="Reverse geocode GPS coordinates to human-readable locations")
+        """Initialize the shortcut pipeline."""
+        super().__init__(name="shortcut", description="Create shortcuts linking to original images")
         
         self.num_discover_threads: int = DEFAULT_NUM_DISCOVER_THREADS
-        self.num_skip_checker_threads: int = 100  # High parallelism for file checking
-        self.num_geolocate_threads: int = 2  # Network-bound, keep low
-        self.num_write_threads: int = 1
+        self.num_skip_checker_threads: int = 100
+        self.num_shortcut_threads: int = 10
         
         # Skip and retry configuration
-        self.retry: bool = False
         self.retry_failed: bool = False
+        self.retry: bool = False
     
     PIPELINE_CONFIG = [
         {
@@ -31,8 +30,9 @@ class GeolocationPipeline(Pipeline):
             "class_name": "DiscoverTask",
             "dir": "discover",
             "kwargs_builder": lambda self: {
+                "maximum": self.num_discover_threads,
                 "input_dir": self.input_dir,
-                "image_extensions": DEFAULT_IMAGE_EXTENSIONS,
+                "image_extensions": DEFAULT_IMAGE_EXTENSIONS | {".lnk"},
                 "sort_order": os.getenv("SORT_ORDER", DEFAULT_SORT_ORDER)
             },
             "task": "Discover",
@@ -45,43 +45,30 @@ class GeolocationPipeline(Pipeline):
             "class_name": "SkipCheckTask",
             "dir": "skip_check",
             "kwargs_builder": lambda self: {
-                "maximum": 100,
+                "maximum": self.num_skip_checker_threads,
                 "input_dir": self.input_dir,
                 "output_dir": self.output_dir,
-                "output_dir_output_suffix": ".geocode.txt",
+                "output_dir_output_suffix": ".lnk",
                 "retry_failed": self.retry_failed,
                 "retry": self.retry
             },
             "task": "SkipCheck",
             "num_threads_getter": "num_skip_checker_threads",
-            "next_task": "Geolocate",
+            "next_task": "Shortcut",
             "transform": lambda result: result[1],  # Extract path from (should_skip, path)
             "check_rejection": lambda result: result[0]  # Check should_skip flag
         },
         {
-            "name": "Geolocate",
-            "class_name": "GeolocationTask",
-            "dir": "geolocate",
+            "name": "Shortcut",
+            "class_name": "ShortcutTask",
+            "dir": "shortcut",
             "kwargs_builder": lambda self: {
+                "maximum": self.num_shortcut_threads,
                 "input_dir": self.input_dir,
-                "output_dir": self.output_dir,
-                "initial_wait_seconds": 1,
-                "max_retries": 5
+                "output_dir": self.output_dir
             },
-            "task": "Geolocate",
-            "num_threads_getter": "num_geolocate_threads",
-            "next_task": "Write"
-        },
-        {
-            "name": "Write",
-            "class_name": "GeolocationWriteTask",
-            "dir": "geolocate",
-            "kwargs_builder": lambda self: {
-                "input_dir": self.input_dir,
-                "output_dir": self.output_dir,
-            },
-            "task": "Write",
-            "num_threads_getter": "num_write_threads",
+            "task": "Shortcut",
+            "num_threads_getter": "num_shortcut_threads",
             "next_task": None
         }
     ]

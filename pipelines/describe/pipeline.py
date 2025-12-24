@@ -49,8 +49,9 @@ class DescribePipeline(Pipeline):
                 "maximum": self.num_skip_checker_threads,
                 "input_dir": self.input_dir,
                 "output_dir": self.output_dir,
-                "skip_all": self.skip_all,
+                "output_dir_output_suffix": ".txt",
                 "retry_failed": self.retry_failed,
+                "retry": self.retry
             },
             "task": "SkipCheck",
             "num_threads_getter": "num_skip_checker_threads",
@@ -132,7 +133,7 @@ class DescribePipeline(Pipeline):
         self.backpressure_multiplier = DEFAULT_BACKPRESSURE_MULTIPLIER
         
         # Skip checking (retry all items)
-        self.skip_all: bool = False
+        self.retry: bool = False
         
         # Retry failed items
         self.retry_failed: bool = False

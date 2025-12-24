@@ -53,7 +53,7 @@ class EnhanceByContextPipeline(Pipeline):
         self.debug: bool = False
         
         # Skip checking (retry all items)
-        self.skip_all: bool = False
+        self.retry: bool = False
         
         # Retry failed items
         self.retry_failed: bool = False
@@ -78,12 +78,12 @@ class EnhanceByContextPipeline(Pipeline):
             "class_name": "SkipCheckTask",
             "dir": "skip_check",
             "kwargs_builder": lambda self: {
+                "maximum": 100,
                 "input_dir": self.input_dir,
                 "output_dir": self.output_dir,
-                "skip_all": self.skip_all,
+                "output_dir_output_suffix": ".enhanced.txt",
                 "retry_failed": self.retry_failed,
-                "output_suffix": ".enhanced.txt",
-                "check_input_exists": True
+                "retry": self.retry
             },
             "task": "SkipCheck",
             "num_threads_getter": "num_skip_checker_threads",

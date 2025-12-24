@@ -111,8 +111,8 @@ def main() -> None:
         pipeline.debug = True
     
     # Set retry flags if applicable
-    if args.retry and hasattr(pipeline, 'skip_all'):
-        pipeline.skip_all = True
+    if args.retry and hasattr(pipeline, 'retry'):
+        pipeline.retry = True
     elif args.retry_failed and hasattr(pipeline, 'retry_failed'):
         pipeline.retry_failed = True
     

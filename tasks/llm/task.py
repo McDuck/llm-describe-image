@@ -66,8 +66,11 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Tuple[str, str, Dict[str, Any]]])
             if not self.backend or not self.model:
                 raise Exception("Backend or model not configured")
             
+            # Use .fixed image if available (from fix_jpeg task)
+            image_path = self.get_preferred_image_path(input_path)
+            
             # Prepare image with backend (now done in LLM task)
-            image_handle: FileHandle = self.backend.prepare_image(input_path)
+            image_handle: FileHandle = self.backend.prepare_image(image_path)
             
             # Prepare format values for prompt template
             dt = metadata.get('datetime')

@@ -49,7 +49,7 @@ class DescribePipeline(Pipeline):
                 "maximum": self.num_skip_checker_threads,
                 "input_dir": self.input_dir,
                 "output_dir": self.output_dir,
-                "output_dir_output_suffix": ".txt",
+                "output_suffix_pattern": ".txt",
                 "retry_failed": self.retry_failed,
                 "retry": self.retry
             },

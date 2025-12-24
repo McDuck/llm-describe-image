@@ -48,7 +48,7 @@ class ShortcutPipeline(Pipeline):
                 "maximum": self.num_skip_checker_threads,
                 "input_dir": self.input_dir,
                 "output_dir": self.output_dir,
-                "output_dir_output_suffix": ".lnk",
+                "output_suffix_pattern": ".lnk",
                 "retry_failed": self.retry_failed,
                 "retry": self.retry
             },

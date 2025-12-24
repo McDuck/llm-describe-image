@@ -16,12 +16,16 @@ class DownloadTask(Task[str, Tuple[str, Dict[str, Any]]]):
     def execute(self, input_path: str) -> Tuple[str, Dict[str, Any]]:
         """
         Extract metadata from image (no longer downloads/prepares with backend).
+        Uses .fixed image if available from fix_jpeg task.
         Returns: (input_path, metadata)
         Raises: Exception on error (caught by worker_thread and passed to WriteTask)
         """
         try:
+            # Use .fixed image if available (from fix_jpeg task)
+            image_path = self.get_preferred_image_path(input_path)
+            
             # Extract metadata from image only
-            metadata: Dict[str, Any] = get_image_metadata(input_path)
+            metadata: Dict[str, Any] = get_image_metadata(image_path)
             return (input_path, metadata)
             
         except Exception as e:

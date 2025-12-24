@@ -75,6 +75,29 @@ class Task(Generic[InputType, OutputType]):
         """Unload resources at worker thread end. Override in subclasses if needed."""
         pass
 
+    # --- Utility Methods-----------------------------------------------------
+    
+    @staticmethod
+    def get_preferred_image_path(input_path: str) -> str:
+        """
+        Check if a .fixed version of the image exists and return it.
+        Otherwise return the original input path.
+        
+        Used to prefer fixed images (from fix_jpeg task) over corrupted originals.
+        
+        Args:
+            input_path: Original image path
+        
+        Returns:
+            Path to .fixed image if it exists, otherwise original input_path
+        """
+        base, ext = os.path.splitext(input_path)
+        fixed_path = base + ".fixed" + ext
+        
+        if os.path.exists(fixed_path):
+            return fixed_path
+        return input_path
+
     # --- Queue Management ----------------------------------------------------
 
     def add(self, item: InputType) -> None:

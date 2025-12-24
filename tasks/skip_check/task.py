@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import Optional, Tuple
+from typing import Tuple
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from tasks.task import Task
 
@@ -11,7 +11,7 @@ class SkipCheckTask(Task[str, Tuple[bool, str]]):
         maximum: int,
         input_dir: str,
         output_dir: str,
-        output_dir_output_suffix: str,
+        output_suffix_pattern: str,
         retry_failed: bool,
         retry: bool
     ) -> None:
@@ -19,7 +19,7 @@ class SkipCheckTask(Task[str, Tuple[bool, str]]):
         self.output_dir: str = output_dir
         self.retry_failed: bool = retry_failed
         self.retry: bool = retry
-        self.output_dir_output_suffix: str = output_dir_output_suffix
+        self.output_suffix_pattern: str = output_suffix_pattern
 
     def execute(self, input_path: str) -> Tuple[bool, str]:
         """
@@ -37,8 +37,13 @@ class SkipCheckTask(Task[str, Tuple[bool, str]]):
         try:
             # Calculate file paths
             relative_path = os.path.relpath(input_path, self.input_dir)
-            output_output_path = os.path.join(self.output_dir, relative_path + self.output_dir_output_suffix)
-            output_output_error_path = os.path.join(self.output_dir, relative_path + ".error" + self.output_dir_output_suffix)
+            
+            # Generate suffix from pattern by substituting {ext} with file extension
+            base, ext = os.path.splitext(input_path)
+            suffix = self.output_suffix_pattern.format(ext=ext)
+            
+            output_output_path = os.path.join(self.output_dir, relative_path + suffix)
+            output_output_error_path = os.path.join(self.output_dir, relative_path + suffix +".error.txt")
             
             # Skip if already processed
             if not self.retry and os.path.exists(output_output_path):

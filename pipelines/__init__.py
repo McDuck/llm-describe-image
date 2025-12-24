@@ -26,6 +26,9 @@ def get_pipeline(pipeline_name: str) -> Optional[Pipeline]:
     elif pipeline_name == "shortcut":
         from pipelines.shortcut import ShortcutPipeline
         return ShortcutPipeline()
+    elif pipeline_name == "fix-jpeg":
+        from pipelines.fix_jpeg import FixJpegPipeline
+        return FixJpegPipeline()
     
     return None
 
@@ -42,4 +45,5 @@ def list_pipelines() -> Dict[str, str]:
         "enhance": "Enhances descriptions using context from nearby images (Discover → SkipCheck → Context → Enhance → Write)",
         "geolocate": "Reverse geocodes GPS coordinates to human-readable locations (Discover → SkipCheck → Geolocate → Write)",
         "shortcut": "Creates Windows shortcuts linking to original images (Discover → SkipCheck → Shortcut)",
+        "fix-jpeg": "Fixes corrupted JPEG files by re-encoding them (Discover → FixJpeg)",
     }

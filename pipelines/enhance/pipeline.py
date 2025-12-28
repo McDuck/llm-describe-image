@@ -81,7 +81,7 @@ class EnhanceByContextPipeline(Pipeline):
                 "maximum": 100,
                 "input_dir": self.input_dir,
                 "output_dir": self.output_dir,
-                "output_suffix_pattern": ".enhanced.txt",
+                "output_suffix_pattern": "{ext}.enhanced.txt",
                 "retry_failed": self.retry_failed,
                 "retry": self.retry
             },

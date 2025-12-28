@@ -35,15 +35,15 @@ class SkipCheckTask(Task[str, Tuple[bool, str]]):
         """
         
         try:
-            # Calculate file paths
-            relative_path = os.path.relpath(input_path, self.input_dir)
-            
             # Generate suffix from pattern by substituting {ext} with file extension
             base, ext = os.path.splitext(input_path)
             suffix = self.output_suffix_pattern.format(ext=ext)
+
+            # Calculate file paths
+            relative_path_base = os.path.relpath(base, self.input_dir)
             
-            output_output_path = os.path.join(self.output_dir, relative_path + suffix)
-            output_output_error_path = os.path.join(self.output_dir, relative_path + suffix +".error.txt")
+            output_output_path = os.path.join(self.output_dir, relative_path_base + suffix)
+            output_output_error_path = os.path.join(self.output_dir, relative_path_base + suffix +".error.txt")
             
             # Skip if already processed
             if not self.retry and os.path.exists(output_output_path):

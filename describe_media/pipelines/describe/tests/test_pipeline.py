@@ -1,4 +1,5 @@
 import json
+import threading
 
 import pytest
 
@@ -88,6 +89,32 @@ def test_llm_uses_geolocation_when_it_arrives_before_required_inputs():
     result = task.execute(("/input/photo.jpg", {**common, "_stage": "recognition", "_recognition": {}}))
 
     assert result["item"][1]["location_str"] == "Amsterdam"
+
+
+def test_llm_status_can_render_while_dependency_events_arrive():
+    task = LLMTask(maximum=1, input_dir="/input", output_dir="/output")
+    errors = []
+    started = threading.Event()
+
+    def add_dependencies():
+        started.set()
+        for index in range(1_000):
+            task.execute((
+                f"/input/photo-{index}.jpg",
+                {"_output_relative_path": f"photo-{index}.jpg", "_stage": "metadata"},
+            ))
+
+    worker = threading.Thread(target=add_dependencies)
+    worker.start()
+    assert started.wait(timeout=1)
+    while worker.is_alive():
+        try:
+            task.format_status("LLM")
+        except Exception as error:
+            errors.append(error)
+    worker.join()
+
+    assert errors == []
 
 
 def test_llm_recognition_context_excludes_unknown_and_unverified_people():

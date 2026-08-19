@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import threading
 from typing import Optional, Tuple, TYPE_CHECKING, Any, Dict
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
@@ -57,6 +58,11 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Dict[str, Any]]):
         )
         self._parts: Dict[str, Dict[str, Tuple[str, Dict[str, Any]]]] = {}
         self._emitted: set[str] = set()
+        # Dependency events arrive on worker threads while the pipeline status
+        # thread reads this state.  Keep those operations atomic so rendering a
+        # progress line cannot fail with "dictionary changed size during
+        # iteration".
+        self._parts_lock = threading.Lock()
         self._written = 0
         self._errors = 0
 
@@ -93,13 +99,14 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Dict[str, Any]]):
         if stage not in (*self.REQUIRED_STAGES, *self.OPTIONAL_STAGES):
             return None
         key = output_relative_path(input_path, self.input_dir or input_path, metadata)
-        self._parts.setdefault(key, {})[stage] = (input_path, dict(metadata))
-        parts = self._parts[key]
-        if key in self._emitted or not all(required in parts for required in self.REQUIRED_STAGES):
-            return None
+        with self._parts_lock:
+            self._parts.setdefault(key, {})[stage] = (input_path, dict(metadata))
+            parts = self._parts[key]
+            if key in self._emitted or not all(required in parts for required in self.REQUIRED_STAGES):
+                return None
 
-        merged = self._merged_metadata(parts)
-        self._emitted.add(key)
+            merged = self._merged_metadata(parts)
+            self._emitted.add(key)
         return self._describe(input_path, merged)
 
     def _merged_metadata(self, parts: Dict[str, Tuple[str, Dict[str, Any]]]) -> Dict[str, Any]:
@@ -211,12 +218,13 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Dict[str, Any]]):
         return {"people": matched_people} if matched_people else None
 
     def format_status(self, name: str) -> str:
-        waiting = [parts for key, parts in self._parts.items() if key not in self._emitted]
-        missing = {
-            stage: sum(1 for parts in waiting if stage not in parts)
-            for stage in ("resize", "recognition")
-        }
-        ready = sum(1 for parts in waiting if all(stage in parts for stage in self.REQUIRED_STAGES))
+        with self._parts_lock:
+            waiting = [parts for key, parts in self._parts.items() if key not in self._emitted]
+            missing = {
+                stage: sum(1 for parts in waiting if stage not in parts)
+                for stage in ("resize", "recognition")
+            }
+            ready = sum(1 for parts in waiting if all(stage in parts for stage in self.REQUIRED_STAGES))
         return (
             f"{name}: {len(waiting)}Q "
             f"[p{missing['resize']} r{missing['recognition']} ready{ready}] "

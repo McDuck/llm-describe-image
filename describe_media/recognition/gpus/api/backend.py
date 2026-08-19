@@ -8,10 +8,10 @@ from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from describe_media.recognition.face_backend import FaceDetection
+from describe_media.recognition.gpus.base import FaceDetection, RecognitionBackend
 
 
-class RemoteRecognitionBackend:
+class RemoteRecognitionBackend(RecognitionBackend):
     """Send an image to a trusted recognition worker and decode its detections."""
 
     backend_name = "remote"

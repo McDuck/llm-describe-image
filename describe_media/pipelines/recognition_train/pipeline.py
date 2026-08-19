@@ -7,7 +7,8 @@ from typing import Optional
 
 from describe_media.config_loader import DEFAULT_RECOGNITION_MATCH_THRESHOLD, DEFAULT_RECOGNITION_MODEL
 from describe_media.pipelines.pipeline import Pipeline
-from describe_media.recognition.client import RemoteRecognitionBackend
+from describe_media.recognition.gpus.api.backend import RemoteRecognitionBackend
+from describe_media.gpu_api import remote_gpu_api_config
 from describe_media.recognition.index import train_recognition_index
 
 
@@ -28,13 +29,13 @@ class RecognitionTrainingPipeline(Pipeline):
         status_interval: float = 5.0,
         **kwargs: object,
     ) -> None:
-        remote_api_base = os.getenv("RECOGNITION_API_BASE")
+        remote_api_base, remote_api_token, remote_timeout_seconds = remote_gpu_api_config()
         backend = None
         if remote_api_base:
             backend = RemoteRecognitionBackend(
                 remote_api_base,
-                os.getenv("RECOGNITION_API_TOKEN", ""),
-                timeout_seconds=float(os.getenv("RECOGNITION_API_TIMEOUT_S", "120")),
+                remote_api_token or "",
+                timeout_seconds=remote_timeout_seconds,
             )
         index_path = train_recognition_index(
             input_dir=os.path.abspath(input_dir),

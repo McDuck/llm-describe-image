@@ -1,6 +1,6 @@
 import pytest
 
-from describe_media.recognition.client import RemoteRecognitionBackend
+from describe_media.recognition.gpus.api.backend import RemoteRecognitionBackend
 
 
 def test_remote_recognition_requires_a_token() -> None:

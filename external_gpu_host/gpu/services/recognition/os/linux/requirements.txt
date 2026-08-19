@@ -1,0 +1,5 @@
+-r ../../requirements.txt
+
+# CPU execution provider for Linux. Replace this with a compatible GPU runtime
+# only when deploying a different Linux-specific execution provider.
+onnxruntime>=1.17.0

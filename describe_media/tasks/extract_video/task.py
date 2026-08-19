@@ -1,5 +1,4 @@
 import json
-import math
 import os
 import struct
 import sys
@@ -9,9 +8,12 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from describe_media.tasks.task import Task
+from describe_media.tasks.extract_video.gpus.api.backend import RemoteVideoFrameBackend
+from describe_media.tasks.extract_video.gpus.base import VideoFrame, VideoFrameBackend
+from describe_media.tasks.extract_video.gpus.direct.backend import DirectVideoFrameBackend
 
 
-MANIFEST_SCHEMA_VERSION = 1
+MANIFEST_SCHEMA_VERSION = 2
 _ISOBMFF_EXTENSIONS = {".3g2", ".3gp", ".m4a", ".mj2", ".mov", ".mp4"}
 
 
@@ -27,6 +29,9 @@ class ExtractVideoTask(Task[str, List[Tuple[str, Dict[str, Any]]]]):
         max_frames: int,
         retry: bool = False,
         retry_failed: bool = False,
+        remote_api_base: Optional[str] = None,
+        remote_api_token: Optional[str] = None,
+        remote_timeout_seconds: float = 120.0,
     ) -> None:
         super().__init__(maximum, input_dir=input_dir)
         self.output_dir = output_dir
@@ -34,6 +39,17 @@ class ExtractVideoTask(Task[str, List[Tuple[str, Dict[str, Any]]]]):
         self.max_frames = int(max_frames)
         self.retry = retry
         self.retry_failed = retry_failed
+        self.remote_api_base = remote_api_base
+        self.remote_api_token = remote_api_token
+        self.remote_timeout_seconds = float(remote_timeout_seconds)
+        self.frame_backend: VideoFrameBackend = (
+            RemoteVideoFrameBackend(remote_api_base, remote_api_token or "", self.remote_timeout_seconds)
+            if remote_api_base
+            else DirectVideoFrameBackend()
+        )
+
+    def load(self) -> None:
+        self.frame_backend.load()
 
     def execute(self, input_path: str) -> List[Tuple[str, Dict[str, Any]]]:
         error_path = os.path.join(self.output_dir, os.path.relpath(input_path, self.input_dir) + ".frames.error.txt")
@@ -78,38 +94,41 @@ class ExtractVideoTask(Task[str, List[Tuple[str, Dict[str, Any]]]]):
 
     def _extract(self, input_path: str, manifest_path: str) -> Dict[str, Any]:
         self._validate_container_index(input_path)
-        try:
-            import cv2  # type: ignore
-        except ImportError as error:
-            raise RuntimeError("Video support requires 'opencv-python-headless' (install with pip install -e \"describe_media[video]\")") from error
+        duration, frames = self.frame_backend.extract(
+            input_path,
+            self.frame_interval_seconds,
+            self.max_frames,
+        )
+        return self._persist_extracted_frames(input_path, manifest_path, duration, frames)
 
-        capture = cv2.VideoCapture(input_path)
-        if not capture.isOpened():
-            raise RuntimeError(f"Could not open video file: {input_path}")
-        try:
-            fps = float(capture.get(cv2.CAP_PROP_FPS))
-            frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-            if fps <= 0 or frame_count <= 0:
-                raise RuntimeError(f"Could not determine video duration: {input_path}")
-            duration = frame_count / fps
-            timestamps = self._sample_timestamps(duration, fps)
-            relative_video = os.path.relpath(input_path, self.input_dir)
-            destination_dir = os.path.join(self.output_dir, os.path.dirname(relative_video))
-            os.makedirs(destination_dir, exist_ok=True)
-            frames: List[Dict[str, Any]] = []
-            for number, timestamp in enumerate(timestamps, start=1):
-                capture.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000.0)
-                success, frame = capture.read()
-                if not success:
-                    raise RuntimeError(f"Could not extract frame at {timestamp:.3f} seconds from {input_path}")
-                frame_name = f"{os.path.basename(input_path)}.frame-{number:04d}-t{timestamp:08.3f}.jpg"
-                frame_path = os.path.join(destination_dir, frame_name)
-                if not cv2.imwrite(frame_path, frame):
-                    raise RuntimeError(f"Could not write extracted frame: {frame_path}")
-                frames.append({"number": number, "timestamp_seconds": timestamp, "path": frame_path})
-        finally:
-            capture.release()
-
+    def _persist_extracted_frames(
+        self,
+        input_path: str,
+        manifest_path: str,
+        duration: float,
+        extracted_frames: List[VideoFrame],
+    ) -> Dict[str, Any]:
+        """Persist frames from either direct or shared-GPU extraction."""
+        relative_video = os.path.relpath(input_path, self.input_dir)
+        destination_dir = os.path.join(self.output_dir, os.path.dirname(relative_video))
+        os.makedirs(destination_dir, exist_ok=True)
+        frames: List[Dict[str, Any]] = []
+        timestamps = [frame.timestamp_seconds for frame in extracted_frames]
+        for index, frame in enumerate(extracted_frames):
+            frame_name = f"{os.path.basename(input_path)}.frame-{frame.number:04d}-t{frame.timestamp_seconds:08.3f}.jpg"
+            frame_path = os.path.join(destination_dir, frame_name)
+            self._write_bytes_atomically(frame_path, frame.jpeg_bytes)
+            # Adjacent midpoint boundaries give every frame one non-overlapping
+            # audio slice, covering the source video exactly once.
+            start = 0.0 if index == 0 else round((timestamps[index - 1] + frame.timestamp_seconds) / 2, 6)
+            end = duration if index == len(extracted_frames) - 1 else round((frame.timestamp_seconds + timestamps[index + 1]) / 2, 6)
+            frames.append({
+                "number": frame.number,
+                "timestamp_seconds": frame.timestamp_seconds,
+                "audio_start_seconds": start,
+                "audio_end_seconds": end,
+                "path": frame_path,
+            })
         manifest = {
             "schema_version": MANIFEST_SCHEMA_VERSION,
             "source": {
@@ -171,15 +190,6 @@ class ExtractVideoTask(Task[str, List[Tuple[str, Dict[str, Any]]]]):
                 "Wait for the copy/export to finish, then replace the source file and rerun with --retry-failed."
             )
 
-    def _sample_timestamps(self, duration: float, fps: float) -> List[float]:
-        requested = max(1, int(math.ceil(duration / self.frame_interval_seconds)))
-        count = min(requested, self.max_frames)
-        if count == 1:
-            return [0.0]
-        # The final duration timestamp points immediately after the final frame.
-        latest = max(0.0, duration - (1.0 / fps))
-        return [round(latest * index / (count - 1), 3) for index in range(count)]
-
     def _remove_error_marker(self, input_path: str) -> None:
         error_path = os.path.join(self.output_dir, os.path.relpath(input_path, self.input_dir) + ".frames.error.txt")
         try:
@@ -198,6 +208,8 @@ class ExtractVideoTask(Task[str, List[Tuple[str, Dict[str, Any]]]]):
                 "_source_video_path": input_path,
                 "_frame_number": frame["number"],
                 "_frame_timestamp_seconds": frame["timestamp_seconds"],
+                "_frame_audio_start_seconds": frame["audio_start_seconds"],
+                "_frame_audio_end_seconds": frame["audio_end_seconds"],
             }))
         return result
 
@@ -209,6 +221,20 @@ class ExtractVideoTask(Task[str, List[Tuple[str, Dict[str, Any]]]]):
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 json.dump(manifest, handle, indent=2, sort_keys=True)
                 handle.write("\n")
+            os.replace(temporary_path, path)
+        except Exception:
+            try:
+                os.unlink(temporary_path)
+            except OSError:
+                pass
+            raise
+
+    @staticmethod
+    def _write_bytes_atomically(path: str, data: bytes) -> None:
+        descriptor, temporary_path = tempfile.mkstemp(prefix=".frame-", suffix=".jpg", dir=os.path.dirname(path))
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(data)
             os.replace(temporary_path, path)
         except Exception:
             try:

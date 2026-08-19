@@ -1,4 +1,4 @@
-"""Small adapter around InsightFace that keeps all recognition local."""
+"""InsightFace adapter used only by the independently deployed worker."""
 
 from __future__ import annotations
 
@@ -23,16 +23,8 @@ def normalise_embedding(values: Sequence[float]) -> List[float]:
     return [float(value) / magnitude for value in values]
 
 
-def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
-    if len(left) != len(right):
-        raise ValueError("Face embeddings have different dimensions")
-    return sum(a * b for a, b in zip(normalise_embedding(left), normalise_embedding(right)))
-
-
 class InsightFaceBackend:
-    """Lazy InsightFace loader so importing the normal describe pipeline is cheap."""
-
-    backend_name = "insightface"
+    """Load InsightFace lazily so server configuration errors stay readable."""
 
     def __init__(self, model_name: str = "buffalo_l", providers: Optional[List[str]] = None) -> None:
         self.model_name = model_name
@@ -44,11 +36,36 @@ class InsightFaceBackend:
             from insightface.app import FaceAnalysis
         except ImportError as error:
             raise RuntimeError(
-                "Local recognition requires the recognition dependencies. "
-                "The Docker image must be rebuilt after this change."
+                "The recognition worker requires its own dependencies. "
+                "Install external_gpu_host/gpu/os/<platform>/requirements.txt."
             ) from error
+        import onnxruntime as ort
+
+        requested_provider = self.providers[0]
+        available_providers = ort.get_available_providers()
+        if requested_provider not in available_providers:
+            available = ", ".join(available_providers)
+            if requested_provider == "DmlExecutionProvider":
+                raise RuntimeError(
+                    "DmlExecutionProvider is unavailable (installed providers: "
+                    f"{available}). Remove the CPU onnxruntime package and force-reinstall "
+                    "onnxruntime-directml in this virtual environment; see "
+                    "external_gpu_host/gpu/os/windows/README.md."
+                )
+            raise RuntimeError(
+                f"Requested provider {requested_provider!r} is unavailable "
+                f"(installed providers: {available})."
+            )
         self._app = FaceAnalysis(name=self.model_name, providers=self.providers)
         self._app.prepare(ctx_id=0 if "CUDAExecutionProvider" in self.providers else -1, det_size=(640, 640))
+
+    def detect_bytes(self, image_bytes: bytes) -> List[FaceDetection]:
+        if self._app is None:
+            raise RuntimeError("InsightFace backend has not been loaded")
+        from PIL import Image
+
+        with Image.open(BytesIO(image_bytes)) as source:
+            return self._detect_image(source)
 
     def detect(self, image_path: str) -> List[FaceDetection]:
         if self._app is None:
@@ -58,22 +75,12 @@ class InsightFaceBackend:
         with Image.open(Path(image_path)) as source:
             return self._detect_image(source)
 
-    def detect_bytes(self, image_bytes: bytes) -> List[FaceDetection]:
-        """Detect faces in a network payload without writing it to disk."""
-        if self._app is None:
-            raise RuntimeError("InsightFace backend has not been loaded")
-        from PIL import Image
-
-        with Image.open(BytesIO(image_bytes)) as source:
-            return self._detect_image(source)
-
     def _detect_image(self, source: object) -> List[FaceDetection]:
         import numpy as np
         from PIL import ImageOps
 
         image = ImageOps.exif_transpose(source).convert("RGB")
         width, height = image.size
-        # InsightFace expects BGR, while Pillow gives us RGB.
         pixels = np.asarray(image)[:, :, ::-1]
         detections: List[FaceDetection] = []
         for face in self._app.get(pixels):

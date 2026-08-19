@@ -4,7 +4,7 @@ Describe Media discovers images and video frames, collects metadata, runs review
 
 ## Run
 
-From the repository root, copy `describe_media/.env.example` to `describe_media/.env`, set `INPUT_DIR` and `OUTPUT_DIR`, then choose either local Python or Docker. The example targets a local OpenAI-compatible endpoint; set `OPENAI_API_BASE=https://api.openai.com/v1` and `OPENAI_API_KEY` if you prefer the hosted OpenAI API:
+From the repository root, copy `describe_media/.env.example` to `describe_media/.env`, set `INPUT_DIR`, `OUTPUT_DIR`, and `OPENAI_API_KEY`, then choose either local Python or Docker:
 
 ```powershell
 python -m describe_media.describe_media describe <input-dir> <output-dir>

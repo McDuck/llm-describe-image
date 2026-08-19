@@ -1,9 +1,12 @@
 import threading
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 
-from describe_media.recognition.client import RemoteRecognitionBackend
-from external_gpu_host.recognition.worker.face_backend import FaceDetection
-from external_gpu_host.recognition.worker.server import RecognitionService, build_handler
+from describe_media.recognition.gpus.api.backend import RemoteRecognitionBackend
+from describe_media.tasks.extract_video.gpus.api.backend import RemoteVideoFrameBackend
+from external_gpu_host.gpu.services.recognition.face_backend import FaceDetection
+from external_gpu_host.gpu.server import GpuApiService, build_handler
+from external_gpu_host.gpu.services.video_frames.video_frames import ExtractedVideoFrame
 
 
 class FakeBackend:
@@ -20,7 +23,7 @@ class FakeBackend:
 
 
 def test_remote_recognition_client_round_trip(tmp_path) -> None:
-    server = ThreadingHTTPServer(("127.0.0.1", 0), build_handler(RecognitionService(FakeBackend(), "test-token")))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), build_handler(GpuApiService(FakeBackend(), "test-token")))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     image_path = tmp_path / "source.jpg"
@@ -46,3 +49,31 @@ def test_remote_recognition_rejects_missing_token() -> None:
         assert "token" in str(error).lower()
     else:
         raise AssertionError("A remote recognition token must be required")
+
+
+def test_remote_video_frame_client_round_trip(tmp_path) -> None:
+    def extract(video_path: str, interval: float, maximum: int):
+        assert Path(video_path).read_bytes() == b"video-bytes"
+        assert interval == 2.5
+        assert maximum == 3
+        return 12.0, [ExtractedVideoFrame(1, 0.0, b"jpeg-bytes")]
+
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        build_handler(GpuApiService(FakeBackend(), "test-token", video_extractor=extract)),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    video_path = tmp_path / "source.mp4"
+    video_path.write_bytes(b"video-bytes")
+    try:
+        backend = RemoteVideoFrameBackend(f"http://127.0.0.1:{server.server_port}/v1", "test-token")
+        backend.load()
+        duration, frames = backend.extract(str(video_path), 2.5, 3)
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+    assert duration == 12.0
+    assert [(frame.number, frame.timestamp_seconds, frame.jpeg_bytes) for frame in frames] == [(1, 0.0, b"jpeg-bytes")]

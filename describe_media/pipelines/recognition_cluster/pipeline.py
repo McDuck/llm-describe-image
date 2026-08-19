@@ -18,7 +18,28 @@ from describe_media.config_loader import (
     DEFAULT_RECOGNITION_MODEL,
     DEFAULT_SORT_ORDER,
 )
+from describe_media.gpu_api import remote_gpu_api_config
 from describe_media.pipelines.pipeline import Pipeline
+
+
+def _recognition_preparation_kwargs(pipeline: "RecognitionClusterPipeline") -> dict:
+    remote_api_base, remote_api_token, remote_timeout_seconds = remote_gpu_api_config()
+    return {
+        "maximum": pipeline.num_recognition_threads,
+        "input_dir": pipeline.input_dir,
+        "output_dir": pipeline.output_dir,
+        "model_name": os.getenv("RECOGNITION_MODEL", DEFAULT_RECOGNITION_MODEL),
+        "detection_threshold": float(
+            os.getenv("RECOGNITION_DETECTION_THRESHOLD", DEFAULT_RECOGNITION_DETECTION_THRESHOLD)
+        ),
+        "cluster_threshold": float(
+            os.getenv("RECOGNITION_CLUSTER_THRESHOLD", DEFAULT_RECOGNITION_CLUSTER_THRESHOLD)
+        ),
+        "retry": pipeline.retry,
+        "remote_api_base": remote_api_base,
+        "remote_api_token": remote_api_token,
+        "remote_timeout_seconds": remote_timeout_seconds,
+    }
 
 
 class RecognitionClusterPipeline(Pipeline):
@@ -56,22 +77,7 @@ class RecognitionClusterPipeline(Pipeline):
             "name": "Recognize",
             "class_name": "RecognitionPreparationTask",
             "dir": "recognition",
-            "kwargs_builder": lambda self: {
-                "maximum": self.num_recognition_threads,
-                "input_dir": self.input_dir,
-                "output_dir": self.output_dir,
-                "model_name": os.getenv("RECOGNITION_MODEL", DEFAULT_RECOGNITION_MODEL),
-                "detection_threshold": float(
-                    os.getenv("RECOGNITION_DETECTION_THRESHOLD", DEFAULT_RECOGNITION_DETECTION_THRESHOLD)
-                ),
-                "cluster_threshold": float(
-                    os.getenv("RECOGNITION_CLUSTER_THRESHOLD", DEFAULT_RECOGNITION_CLUSTER_THRESHOLD)
-                ),
-                "retry": self.retry,
-                "remote_api_base": os.getenv("RECOGNITION_API_BASE"),
-                "remote_api_token": os.getenv("RECOGNITION_API_TOKEN"),
-                "remote_timeout_seconds": float(os.getenv("RECOGNITION_API_TIMEOUT_S", "120")),
-            },
+            "kwargs_builder": _recognition_preparation_kwargs,
             "task": "Recognize",
             "num_threads_getter": "num_recognition_threads",
             "next_task": None,

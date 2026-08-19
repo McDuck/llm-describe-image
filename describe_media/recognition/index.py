@@ -12,7 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from describe_media.recognition.face_backend import InsightFaceBackend, cosine_similarity, normalise_embedding
+from describe_media.recognition.gpus.base import RecognitionBackend, cosine_similarity, normalise_embedding
+from describe_media.recognition.gpus.direct.backend import InsightFaceBackend
 
 SCHEMA_VERSION = 2
 INDEX_FILENAME = "model-manifest.json"
@@ -72,7 +73,7 @@ def train_recognition_index(
     output_dir: str,
     model_name: str = "buffalo_l",
     match_threshold: float = 0.55,
-    backend: Optional[InsightFaceBackend] = None,
+    backend: Optional[RecognitionBackend] = None,
 ) -> Path:
     """Build one reusable local index, with an inspectable model file per identity."""
     source_root = Path(input_dir)

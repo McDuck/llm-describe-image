@@ -10,9 +10,9 @@ def test_training_pipeline_uses_remote_worker_when_configured(tmp_path, monkeypa
         captured.update(kwargs)
         return output_root / "recognition" / "model-manifest.json"
 
-    monkeypatch.setenv("RECOGNITION_API_BASE", "http://127.0.0.1:15003/v1")
-    monkeypatch.setenv("RECOGNITION_API_TOKEN", "test-token")
-    monkeypatch.setenv("RECOGNITION_API_TIMEOUT_S", "30")
+    monkeypatch.setenv("GPU_API_BASE", "http://127.0.0.1:15003/v1")
+    monkeypatch.setenv("GPU_API_TOKEN", "test-token")
+    monkeypatch.setenv("GPU_API_TIMEOUT_S", "30")
     monkeypatch.setattr("describe_media.pipelines.recognition_train.pipeline.train_recognition_index", fake_train)
 
     RecognitionTrainingPipeline().run(str(input_root), str(output_root))

@@ -13,8 +13,9 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from PIL import Image, ImageOps
 
-from describe_media.recognition.client import RemoteRecognitionBackend
-from describe_media.recognition.face_backend import FaceDetection, InsightFaceBackend, cosine_similarity, normalise_embedding
+from describe_media.recognition.gpus.api.backend import RemoteRecognitionBackend
+from describe_media.recognition.gpus.base import FaceDetection, RecognitionBackend, cosine_similarity, normalise_embedding
+from describe_media.recognition.gpus.direct.backend import InsightFaceBackend
 from describe_media.recognition.index import INDEX_FILENAME, RecognitionIndex, SCHEMA_VERSION, write_json_atomically
 from describe_media.tasks.media import output_relative_path
 from describe_media.tasks.task import Task
@@ -290,7 +291,7 @@ class RecognitionTask(Task[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any]
         self.remote_api_token = remote_api_token
         self.remote_timeout_seconds = float(remote_timeout_seconds)
         self.index: Optional[RecognitionIndex] = None
-        self.backend: Optional[InsightFaceBackend] = None
+        self.backend: Optional[RecognitionBackend] = None
         self._candidate_clusters: Dict[str, str] = {}
         self._candidate_clusters_loaded = False
         self._candidate_cluster_lock = threading.Lock()

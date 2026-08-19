@@ -1,0 +1,2 @@
+-r ../../services/recognition/os/linux/requirements.txt
+-r ../../services/video_frames/requirements.txt

@@ -4,7 +4,7 @@ from pathlib import Path
 from PIL import Image
 
 from describe_media.pipelines.recognition_cluster import RecognitionClusterPipeline
-from describe_media.recognition.face_backend import FaceDetection
+from describe_media.recognition.gpus.base import FaceDetection
 from describe_media.recognition.index import RecognitionIndex, train_recognition_index
 from recognition_review.api.server import ReviewStore
 from describe_media.tasks.recognition.task import RecognitionPreparationTask, RecognitionTask

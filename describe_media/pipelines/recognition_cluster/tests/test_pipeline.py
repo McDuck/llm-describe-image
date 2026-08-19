@@ -2,9 +2,9 @@ from describe_media.pipelines.recognition_cluster import RecognitionClusterPipel
 
 
 def test_recognition_preparation_pipeline_uses_remote_worker_when_configured(monkeypatch) -> None:
-    monkeypatch.setenv("RECOGNITION_API_BASE", "http://gpu-host.example:5002/v1")
-    monkeypatch.setenv("RECOGNITION_API_TOKEN", "test-token")
-    monkeypatch.setenv("RECOGNITION_API_TIMEOUT_S", "30")
+    monkeypatch.setenv("GPU_API_BASE", "http://gpu-host.example:5002/v1")
+    monkeypatch.setenv("GPU_API_TOKEN", "test-token")
+    monkeypatch.setenv("GPU_API_TIMEOUT_S", "30")
     pipeline = RecognitionClusterPipeline()
     pipeline.input_dir = "/input"
     pipeline.output_dir = "/output"

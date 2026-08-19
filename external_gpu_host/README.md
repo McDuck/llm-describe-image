@@ -1,6 +1,6 @@
 # External GPU host
 
-This directory contains services deployed independently from Describe Media. The recognition worker is self-contained: a GPU host can install its requirements and start it without installing the Describe Media application.
+This directory contains GPU-side services deployed independently from Describe Media. The shared GPU API keeps face recognition and video-frame extraction together below its `services/` implementation directory while exposing one authenticated endpoint and configuration.
 
-- [`recognition/README.md`](recognition/README.md) documents the authenticated InsightFace worker, Windows DirectML setup, and reverse SSH tunnel.
+- [`gpu/README.md`](gpu/README.md) documents the authenticated shared GPU API, its services, Windows DirectML setup, and reverse SSH tunnel.
 - [`openai/koboldcpp/README.md`](openai/koboldcpp/README.md) documents a Windows KoboldCpp server used through Describe Media's OpenAI-compatible backend.

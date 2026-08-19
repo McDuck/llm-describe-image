@@ -1,0 +1,4 @@
+-r ../../requirements.txt
+
+# Provides DmlExecutionProvider on supported Windows DirectX 12 hardware.
+onnxruntime-directml>=1.17.0

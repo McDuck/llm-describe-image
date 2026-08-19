@@ -1,6 +1,6 @@
 """
-Configuration loader for llm-describe-image.
-Loads default configuration from config.defaults.toml
+Configuration loader for Describe Media.
+Loads default configuration from config/config.defaults.toml.
 """
 
 import os
@@ -18,7 +18,7 @@ def load_defaults() -> Dict[str, Any]:
                 "TOML library not found. Install tomli for Python < 3.11: pip install tomli"
             )
     
-    config_file: str = os.path.join(os.path.dirname(__file__), "config.defaults.toml")
+    config_file: str = os.path.join(os.path.dirname(__file__), "config", "config.defaults.toml")
     
     with open(config_file, "rb") as f:
         config: Dict[str, Any] = tomllib.load(f)
@@ -39,14 +39,28 @@ DEFAULT_SORT_ORDER: str = _config["sorting"]["order"]
 DEFAULT_NUM_DISCOVER_THREADS: int = _config["threads"]["discover"]
 DEFAULT_NUM_SKIP_CHECKER_THREADS: int = _config["threads"]["skip_checker"]
 DEFAULT_NUM_DOWNLOAD_THREADS: int = _config["threads"]["download"]
+DEFAULT_NUM_RESIZE_THREADS: int = _config["threads"]["resize"]
 DEFAULT_NUM_LLM_THREADS: int = _config["threads"]["llm"]
 DEFAULT_NUM_WRITE_THREADS: int = _config["threads"]["write"]
 DEFAULT_NUM_CONTEXT_THREADS: int = _config["threads"]["context"]
 DEFAULT_NUM_ENHANCE_THREADS: int = _config["threads"]["enhance"]
+DEFAULT_MAX_CONCURRENT_TASKS: int = _config["performance"]["max_concurrent_tasks"]
 DEFAULT_BACKPRESSURE_MULTIPLIER: float = _config["performance"]["backpressure_multiplier"]
 DEFAULT_RETRY_FAILED: bool = _config["retry"]["failed"]
 DEFAULT_IMAGE_EXTENSIONS: Set[str] = set(_config["image"]["extensions"])
-DEFAULT_PIPELINE_MODE: str = _config["pipeline"]["mode"]
+DEFAULT_VIDEO_EXTENSIONS: Set[str] = set(_config["video"]["extensions"])
+DEFAULT_VIDEO_FRAME_INTERVAL_SECONDS: float = _config["video"]["frame_interval_seconds"]
+DEFAULT_VIDEO_MAX_FRAMES: int = _config["video"]["max_frames"]
+DEFAULT_RESIZE_MAX_WIDTH: int = _config["resize"]["max_width"]
+DEFAULT_RESIZE_MAX_HEIGHT: int = _config["resize"]["max_height"]
+DEFAULT_RECOGNITION_MODEL: str = _config["recognition"]["model"]
+DEFAULT_RECOGNITION_ENABLED: bool = _config["recognition"]["enabled"]
+DEFAULT_RECOGNITION_DETECTION_THRESHOLD: float = _config["recognition"]["detection_threshold"]
+DEFAULT_RECOGNITION_CLUSTER_THRESHOLD: float = _config["recognition"]["cluster_threshold"]
+DEFAULT_RECOGNITION_MATCH_THRESHOLD: float = _config["recognition"]["match_threshold"]
+DEFAULT_RECOGNITION_COPY_MATCHES_TO_REVIEW_CLUSTERS: bool = _config["recognition"]["copy_matches_to_review_clusters"]
+DEFAULT_RECOGNITION_THREADS: int = _config["threads"]["recognition"]
+DEFAULT_REVERSE_GEOCODE_GPS: bool = _config["metadata"]["reverse_geocode_gps"]
 DEFAULT_CONTEXT_MODEL_NAME: str = _config["enhancement"]["model"]
 DEFAULT_MODEL_CONTEXT_LENGTH: int = _config["enhancement"]["model_context_length"]
 DEFAULT_CONTEXT_WINDOW_DAYS: int = _config["enhancement"]["context_window_days"]
@@ -56,3 +70,4 @@ DEFAULT_CONTEXT_TEMPLATE: str = _config["enhancement"]["context_template"]
 DEFAULT_CONTEXT_ITEM_TEMPLATE: str = _config["enhancement"]["context_item_template"]
 DEFAULT_CONTEXT_ITEM_MAX_LENGTH: int = _config["enhancement"]["context_item_max_length"]
 DEFAULT_MAX_CONTEXT_IN_PROMPT: int = _config["enhancement"]["max_context_in_prompt"]
+DEFAULT_LMSTUDIO_SYNC_API_TIMEOUT_S: int = _config["lmstudio"]["sync_api_timeout_s"]

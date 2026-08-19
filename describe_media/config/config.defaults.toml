@@ -1,4 +1,4 @@
-# Default configuration values for llm-describe-image
+# Default configuration values for Describe Media
 # These defaults are used when environment variables or command-line arguments are not provided.
 
 [directories]
@@ -10,17 +10,58 @@ output_dir = ""  # Will use INPUT_DIR if not set
 # Image processing
 extensions = [".jpg", ".jpeg", ".png", ".webp"]
 
+[video]
+# Sample video frames before sending them through the normal image pipeline.
+extensions = [".mp4", ".mov", ".mkv", ".avi", ".webm"]
+frame_interval_seconds = 5.0
+max_frames = 24
+[resize]
+# Image resizing settings
+max_width = 720
+max_height = 720
+
+[recognition]
+# All recognition models and resulting embeddings stay local. Install the optional
+# recognition dependencies before using the recognition or recognition-train commands.
+model = "buffalo_l"
+enabled = true
+# Lower values include more detector results; lower clustering values merge more faces.
+detection_threshold = 0.60
+cluster_threshold = 0.45
+# A name is sent to the LLM only when an index match reaches this score.
+match_threshold = 0.55
+# Keep threshold-approved image and video-frame crops in provisional review
+# clusters. They are never merged into a reviewed identity automatically.
+copy_matches_to_review_clusters = true
+
 [metadata]
 # Metadata extraction settings
 reverse_geocode_gps = false  # Reverse geocode GPS to human-readable location (requires geopy)
 
 [model]
 # Model configuration
-backend = "lmstudio"
+backend = "openai"
+
+[openai]
+# OpenAI API settings. Set OPENAI_API_KEY in config/.env or the environment.
+api_base = "https://api.openai.com/v1"
+timeout_s = 600  # 10 minutes in seconds
+
+[lmstudio]
+# LM Studio specific settings
+sync_api_timeout_s = 600  # 10 minutes in seconds
+
+[huggingface]
+# Hugging Face Transformers specific settings
+device = "auto"  # Device to run model on: "auto", "cuda", "cpu"
+use_quantization = true  # Use 4-bit quantization to reduce memory usage
+max_new_tokens = 512  # Maximum tokens to generate
+temperature = 0.7  # Sampling temperature
+top_p = 0.9  # Nucleus sampling parameter
 
 [describe]
 # Describe-image pipeline settings
-model = "qwen/qwen3-vl-8b"
+model = "gpt-5"
 # Prompt template with placeholders: {filename}, {datetime}, {location}, {camera}
 prompt = "Context:\nBestandsnaam: {filename}\nDatumtijd: {datetime}\nLocatie: {location}\nCamera: {camera}\n\nOpdracht: Beschrijf de foto in het Nederlands. Geef geen informatie terug over context bestandsnaam, datumtijd, locatie en camera, maar als nodig gebruik die informatie wel."
 # Output format template for describe pipeline
@@ -31,7 +72,7 @@ output_format = "Bestandsnaam: {filename}\nDatumtijd: {datetime}\nLocatie: {loca
 # Context enhancement pipeline settings
 # Text-only models are typically better for enhancement tasks (faster, cheaper, more focused on language)
 # Good options: llama3, mistral, qwen2.5 (text models work well for refining existing descriptions)
-model = "qwen/qwen3-8b"
+model = "microsoft/DialoGPT-medium"
 model_context_length = 16384  # Context window size - 16K tokens for 16GB VRAM with 8B model
 # Context section template with placeholder: {items} (list of numbered context descriptions)
 context_template = "Context van andere foto's uit dezelfde periode/locatie:\n\n{items}\n"
@@ -56,15 +97,20 @@ order = "natural-desc"
 
 [threads]
 # Thread counts for each pipeline stage
-discover = 100
-skip_checker = 100
-download = 2
+discover = 1
+skip_checker = 1
+download = 1
+resize = 1
+recognition = 1
 llm = 1
 write = 1
-context = 2
+context = 1
 enhance = 1
 
 [performance]
+# The machine runs only one pipeline task at a time. The scheduler still keeps
+# downstream work moving first, and rotates equally placed input branches.
+max_concurrent_tasks = 1
 # Backpressure control: allow queue to grow to (max * multiplier) before stopping upstream work
 backpressure_multiplier = 2.0
 
@@ -82,7 +128,3 @@ format = "Datum tijd: {datetime}\nLocatie: {location}\nBeschrijving:\n{content}"
 status_interval = 5.0
 # Verbose output
 verbose = false
-
-[pipeline]
-# Pipeline to run: "describe-image" or "enhance-by-context"
-mode = "describe-image"

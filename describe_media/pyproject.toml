@@ -1,14 +1,14 @@
 [project]
-name = "llm-describe-image"
+name = "describe-media"
 version = "1.0.0"
-description = "Task-based image description pipeline using LLM vision models"
+description = "Task-based media description pipeline using vision-capable models"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "McDuck"}
+    {name = "Project contributors"}
 ]
-keywords = ["llm", "image-description", "vision", "ai", "lmstudio"]
+keywords = ["media-description", "image-description", "video-description", "vision", "ai", "lmstudio"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -26,9 +26,20 @@ dependencies = [
     "geopy>=2.0.0",
     "python-dotenv>=1.0.0",
     "tomli>=2.0.0; python_version < '3.11'",
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "accelerate>=0.20.0",
+    "bitsandbytes>=0.40.0",
 ]
 
 [project.optional-dependencies]
+recognition = [
+    "insightface>=0.7.3",
+    "onnxruntime>=1.17.0",
+]
+video = [
+    "opencv-python-headless>=4.5.0",
+]
 dev = [
     "pytest>=7.0.0",
     "black>=23.0.0",
@@ -36,15 +47,12 @@ dev = [
 ]
 
 [project.scripts]
-llm-describe-image = "llm_describe_directory:main"
+describe-media = "describe_media.describe_media:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-py-modules = ["llm_describe_directory", "config_loader"]
-
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["tasks*"]
+where = [".."]
+include = ["describe_media*", "recognition_review*"]

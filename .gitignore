@@ -15,5 +15,12 @@ dist/
 
 # Virtual environments
 .env/
+.env
 venv/
 .venv/
+
+# Local deployment and recognition data. Never commit personal identity
+# embeddings, SSH host fingerprints, or machine-specific configuration.
+.private/
+.ssh-*-known-hosts
+recognition/index.json

@@ -1,0 +1,19 @@
+.git
+.gitignore
+.env
+.pytest_cache
+.venv
+.venv-1
+.venv-recognition
+__pycache__
+build
+llm_describe_image.egg-info
+*.pyc
+*.pyo
+*.pyd
+sample-output
+
+# Recognition review artifacts live on the storage output mount and are not source
+# files. Keep only the Python package modules in the image build context.
+recognition/*
+!recognition/*.py

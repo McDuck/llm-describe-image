@@ -1,0 +1,49 @@
+name: describe-media
+
+# Describe Media is deployed on Linux. Host networking keeps loopback-only
+# reverse SSH tunnels reachable from the application container.
+x-app: &app
+  build:
+    context: ..
+    dockerfile: describe_media/Dockerfile
+  image: describe-media:local
+  working_dir: /app
+  network_mode: host
+  env_file:
+    - ${DESCRIBE_MEDIA_ENV_FILE:-config/.env}
+  environment:
+    INPUT_DIR: /data/input
+    OUTPUT_DIR: /data/output
+    LMSTUDIO_API_HOST: ${LMSTUDIO_API_HOST:-127.0.0.1:1234}
+    LMSTUDIO_SYNC_API_TIMEOUT_S: ${LMSTUDIO_SYNC_API_TIMEOUT_S:-600}
+    OPENAI_API_BASE: ${OPENAI_API_BASE:-https://api.openai.com/v1}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  volumes:
+    - type: bind
+      source: ${INPUT_DIR:?Set INPUT_DIR in config/.env to the Linux storage mount path}
+      target: /data/input
+      read_only: true
+    - type: bind
+      source: ${OUTPUT_DIR:?Set OUTPUT_DIR in config/.env to a writable Linux path}
+      target: /data/output
+
+services:
+  describe_media:
+    <<: *app
+    command: ["all"]
+
+  recognition-train:
+    <<: *app
+    command: ["recognition-train"]
+
+  e2e:
+    profiles: ["test"]
+    build:
+      context: ..
+      dockerfile: describe_media/Dockerfile
+    image: describe-media:local
+    working_dir: /app
+    volumes:
+      - ..:/app
+    entrypoint: ["pytest"]
+    command: ["describe_media/tests/e2e", "-q"]

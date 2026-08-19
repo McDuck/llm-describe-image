@@ -1,0 +1,1 @@
+"""Standalone authenticated InsightFace worker."""

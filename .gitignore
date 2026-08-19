@@ -24,3 +24,4 @@ venv/
 .private/
 .ssh-*-known-hosts
 recognition/index.json
+/deploy.sh

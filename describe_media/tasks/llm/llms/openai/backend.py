@@ -48,7 +48,7 @@ class OpenAIBackend(LLMBackend):
         """Confirm the OpenAI API is reachable."""
         try:
             self._request("models")
-            print(f"OpenAI API is reachable at {self.api_base}.")
+            print(f"OpenAI API endpoint is reachable at {self.api_base}.")
         except RuntimeError as error:
             print(error)
         return False

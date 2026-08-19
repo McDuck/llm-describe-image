@@ -55,3 +55,13 @@ class OpenAIBackendTests(unittest.TestCase):
         self.assertEqual(content[0], {"type": "text", "text": "Describe this image"})
         self.assertEqual(content[1]["type"], "image_url")
         self.assertEqual(content[1]["image_url"]["url"], "data:image/jpeg;base64,anBlZy1ieXRlcw==")
+
+    def test_reachability_log_uses_generic_openai_endpoint_name(self) -> None:
+        with patch.dict("os.environ", {"OPENAI_API_BASE": "http://127.0.0.1:15002/v1"}):
+            backend = OpenAIBackend()
+        with patch.object(backend, "_request"), patch("builtins.print") as print_mock:
+            backend.bootstrap_server(auto_start=True)
+
+        print_mock.assert_called_once_with(
+            "OpenAI API endpoint is reachable at http://127.0.0.1:15002/v1."
+        )

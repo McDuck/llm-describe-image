@@ -1,0 +1,1 @@
+"""Recognition-cluster pipeline tests."""

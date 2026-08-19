@@ -29,8 +29,14 @@ from describe_media.config_loader import (
     DEFAULT_VIDEO_EXTENSIONS,
     DEFAULT_VIDEO_FRAME_INTERVAL_SECONDS,
     DEFAULT_VIDEO_MAX_FRAMES,
+    DEFAULT_VIDEO_TRANSCRIPTION_ENABLED,
+    DEFAULT_VIDEO_TRANSCRIPTION_BACKEND,
+    DEFAULT_VIDEO_DESCRIPTION_PROMPT,
+    DEFAULT_VIDEO_TRANSCRIPTION_LANGUAGE,
+    DEFAULT_VIDEO_TRANSCRIPTION_MODEL,
     DEFAULT_MAX_CONTEXT_ITEMS,
 )
+from describe_media.gpu_api import remote_gpu_api_config
 from describe_media.pipelines.pipeline import Pipeline
 
 
@@ -59,14 +65,93 @@ def route_resize_targets(item: Any) -> list[str]:
     return targets
 
 
-def route_llm_result(result: Any) -> Optional[str]:
+def route_extracted_video_frame(item: Any) -> list[str]:
+    """Send every extracted frame to visual processing and its audio slice."""
+    return ["ImageRouter", "Transcribe"] if isinstance(item, tuple) and len(item) == 2 else []
+
+
+def route_llm_result(result: Any) -> Any:
     if isinstance(result, dict):
-        return result.get("route")
+        route = result.get("route")
+        item = result.get("item")
+        if (
+            isinstance(item, tuple) and len(item) == 2 and isinstance(item[1], dict)
+            and item[1].get("_source_video_path")
+        ):
+            return [route, "DescribeVideo"] if route else "DescribeVideo"
+        return route
     return None
 
 
 def unwrap_result(result: Any) -> Any:
     return result.get("item") if isinstance(result, dict) else None
+
+
+def _extract_video_kwargs(pipeline: "DescribePipeline") -> dict:
+    remote_api_base, remote_api_token, remote_timeout_seconds = remote_gpu_api_config()
+    return {
+        "maximum": pipeline.num_download_threads,
+        "input_dir": pipeline.input_dir,
+        "output_dir": pipeline.output_dir,
+        "frame_interval_seconds": float(os.getenv("VIDEO_FRAME_INTERVAL_SECONDS", DEFAULT_VIDEO_FRAME_INTERVAL_SECONDS)),
+        "max_frames": int(os.getenv("VIDEO_MAX_FRAMES", DEFAULT_VIDEO_MAX_FRAMES)),
+        "retry": pipeline.retry,
+        "retry_failed": pipeline.retry_failed,
+        "remote_api_base": remote_api_base,
+        "remote_api_token": remote_api_token,
+        "remote_timeout_seconds": remote_timeout_seconds,
+    }
+
+
+def _transcribe_kwargs(pipeline: "DescribePipeline") -> dict:
+    remote_api_base, remote_api_token, remote_timeout_seconds = remote_gpu_api_config()
+    return {
+        "maximum": 1,
+        "input_dir": pipeline.input_dir,
+        "output_dir": pipeline.output_dir,
+        "enabled": os.getenv("VIDEO_TRANSCRIPTION_ENABLED", str(DEFAULT_VIDEO_TRANSCRIPTION_ENABLED)).lower() in {"1", "true", "yes", "on"},
+        "backend_name": os.getenv("VIDEO_TRANSCRIPTION_BACKEND", DEFAULT_VIDEO_TRANSCRIPTION_BACKEND),
+        "model_name": os.getenv("VIDEO_TRANSCRIPTION_MODEL", DEFAULT_VIDEO_TRANSCRIPTION_MODEL),
+        "language": os.getenv("VIDEO_TRANSCRIPTION_LANGUAGE", DEFAULT_VIDEO_TRANSCRIPTION_LANGUAGE),
+        "remote_api_base": remote_api_base,
+        "remote_api_token": remote_api_token,
+        "remote_timeout_seconds": remote_timeout_seconds,
+        "retry": pipeline.retry,
+        "retry_failed": pipeline.retry_failed,
+    }
+
+
+def _describe_video_kwargs(pipeline: "DescribePipeline") -> dict:
+    return {
+        "maximum": 1,
+        "input_dir": pipeline.input_dir,
+        "output_dir": pipeline.output_dir,
+        "model_name": os.getenv("VIDEO_DESCRIPTION_MODEL", os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME)),
+        "prompt": os.getenv("VIDEO_DESCRIPTION_PROMPT", DEFAULT_VIDEO_DESCRIPTION_PROMPT),
+        "backend_name": os.getenv("BACKEND"),
+        "output_format": os.getenv("OUTPUT_FORMAT", DEFAULT_OUTPUT_FORMAT),
+        "retry": pipeline.retry,
+        "retry_failed": pipeline.retry_failed,
+        "sync_api_timeout_s": int(os.getenv("LMSTUDIO_SYNC_API_TIMEOUT_S", DEFAULT_LMSTUDIO_SYNC_API_TIMEOUT_S)),
+    }
+
+
+def _recognition_kwargs(pipeline: "DescribePipeline") -> dict:
+    remote_api_base, remote_api_token, remote_timeout_seconds = remote_gpu_api_config()
+    return {
+        "maximum": pipeline.num_recognition_threads,
+        "input_dir": pipeline.input_dir,
+        "output_dir": pipeline.output_dir,
+        "model_name": os.getenv("RECOGNITION_MODEL", DEFAULT_RECOGNITION_MODEL),
+        "enabled": os.getenv("RECOGNITION_ENABLED", str(DEFAULT_RECOGNITION_ENABLED)).lower() in {"1", "true", "yes", "on"},
+        "detection_threshold": float(os.getenv("RECOGNITION_DETECTION_THRESHOLD", DEFAULT_RECOGNITION_DETECTION_THRESHOLD)),
+        "copy_matches_to_review_clusters": os.getenv("RECOGNITION_COPY_MATCHES_TO_REVIEW_CLUSTERS", str(DEFAULT_RECOGNITION_COPY_MATCHES_TO_REVIEW_CLUSTERS)).lower() in {"1", "true", "yes", "on"},
+        "retry": pipeline.retry,
+        "retry_failed": pipeline.retry_failed,
+        "remote_api_base": remote_api_base,
+        "remote_api_token": remote_api_token,
+        "remote_timeout_seconds": remote_timeout_seconds,
+    }
 
 
 class DescribePipeline(Pipeline):
@@ -80,8 +165,13 @@ class DescribePipeline(Pipeline):
         },
         {
             "name": "ExtractVideo", "class_name": "ExtractVideoTask", "dir": "extract_video",
-            "kwargs_builder": lambda self: {"maximum": self.num_download_threads, "input_dir": self.input_dir, "output_dir": self.output_dir, "frame_interval_seconds": float(os.getenv("VIDEO_FRAME_INTERVAL_SECONDS", DEFAULT_VIDEO_FRAME_INTERVAL_SECONDS)), "max_frames": int(os.getenv("VIDEO_MAX_FRAMES", DEFAULT_VIDEO_MAX_FRAMES)), "retry": self.retry, "retry_failed": self.retry_failed},
-            "task": "ExtractVideo", "num_threads_getter": "num_download_threads", "next_task": "ImageRouter", "error_task": "VideoError", "priority": 4,
+            "kwargs_builder": _extract_video_kwargs,
+            "task": "ExtractVideo", "num_threads_getter": "num_download_threads", "next_task": None, "route": route_extracted_video_frame, "route_targets": ["ImageRouter", "Transcribe"], "error_task": "VideoError", "priority": 4,
+        },
+        {
+            "name": "Transcribe", "class_name": "TranscribeVideoTask", "dir": "transcribe_video",
+            "kwargs_builder": _transcribe_kwargs,
+            "task": "Transcribe", "num_threads": 1, "next_task": "LLM", "priority": 3,
         },
         {
             "name": "ImageRouter", "class_name": "ImageRouterTask", "dir": "image_router",
@@ -105,13 +195,18 @@ class DescribePipeline(Pipeline):
         },
         {
             "name": "Recognition", "class_name": "RecognitionTask", "dir": "recognition",
-            "kwargs_builder": lambda self: {"maximum": self.num_recognition_threads, "input_dir": self.input_dir, "output_dir": self.output_dir, "model_name": os.getenv("RECOGNITION_MODEL", DEFAULT_RECOGNITION_MODEL), "enabled": os.getenv("RECOGNITION_ENABLED", str(DEFAULT_RECOGNITION_ENABLED)).lower() in {"1", "true", "yes", "on"}, "detection_threshold": float(os.getenv("RECOGNITION_DETECTION_THRESHOLD", DEFAULT_RECOGNITION_DETECTION_THRESHOLD)), "copy_matches_to_review_clusters": os.getenv("RECOGNITION_COPY_MATCHES_TO_REVIEW_CLUSTERS", str(DEFAULT_RECOGNITION_COPY_MATCHES_TO_REVIEW_CLUSTERS)).lower() in {"1", "true", "yes", "on"}, "retry": self.retry, "retry_failed": self.retry_failed, "remote_api_base": os.getenv("RECOGNITION_API_BASE"), "remote_api_token": os.getenv("RECOGNITION_API_TOKEN"), "remote_timeout_seconds": float(os.getenv("RECOGNITION_API_TIMEOUT_S", "120"))},
+            "kwargs_builder": _recognition_kwargs,
             "task": "Recognition", "num_threads_getter": "num_recognition_threads", "next_task": "LLM", "priority": 2,
         },
         {
             "name": "LLM", "class_name": "LLMTask", "dir": "llm",
             "kwargs_builder": lambda self: {"maximum": self.num_llm_threads, "model_name": os.getenv("MODEL_NAME", DEFAULT_MODEL_NAME), "prompt": os.getenv("PROMPT", DEFAULT_PROMPT), "backend_name": os.getenv("BACKEND"), "input_dir": self.input_dir, "output_dir": self.output_dir, "output_format": os.getenv("OUTPUT_FORMAT", DEFAULT_OUTPUT_FORMAT), "retry": self.retry, "retry_failed": self.retry_failed, "sync_api_timeout_s": int(os.getenv("LMSTUDIO_SYNC_API_TIMEOUT_S", DEFAULT_LMSTUDIO_SYNC_API_TIMEOUT_S))},
-            "task": "LLM", "num_threads_getter": "num_llm_threads", "next_task": None, "route": route_llm_result, "route_targets": ["Enhance", "FixJPEG"], "transform": unwrap_result, "priority": 1,
+            "task": "LLM", "num_threads_getter": "num_llm_threads", "next_task": None, "route": route_llm_result, "route_targets": ["Enhance", "FixJPEG", "DescribeVideo"], "transform": unwrap_result, "priority": 1,
+        },
+        {
+            "name": "DescribeVideo", "class_name": "DescribeVideoTask", "dir": "describe_video",
+            "kwargs_builder": _describe_video_kwargs,
+            "task": "DescribeVideo", "num_threads": 1, "next_task": None, "priority": 0,
         },
         {
             "name": "Enhance", "class_name": "IntegratedEnhanceTask", "dir": "enhance_integrated",

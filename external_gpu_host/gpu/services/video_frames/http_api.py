@@ -45,6 +45,7 @@ def serve_video_frames_request(
                 remaining -= len(chunk)
         duration, frames = extract(temporary_path, interval, max_frames)
     except Exception as error:
+        print(f"gpu-api-server: video-frame extraction failed: {error!r}")
         handler._json(HTTPStatus.UNPROCESSABLE_ENTITY, {"error": str(error)})
         return
     finally:

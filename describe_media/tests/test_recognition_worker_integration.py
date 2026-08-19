@@ -4,6 +4,7 @@ from pathlib import Path
 
 from describe_media.recognition.gpus.api.backend import RemoteRecognitionBackend
 from describe_media.tasks.extract_video.gpus.api.backend import RemoteVideoFrameBackend
+from describe_media.tasks.transcribe_video.gpus.backend import RemoteAudioTranscriptionBackend
 from external_gpu_host.gpu.services.recognition.face_backend import FaceDetection
 from external_gpu_host.gpu.server import GpuApiService, build_handler
 from external_gpu_host.gpu.services.video_frames.video_frames import ExtractedVideoFrame
@@ -77,3 +78,30 @@ def test_remote_video_frame_client_round_trip(tmp_path) -> None:
 
     assert duration == 12.0
     assert [(frame.number, frame.timestamp_seconds, frame.jpeg_bytes) for frame in frames] == [(1, 0.0, b"jpeg-bytes")]
+
+
+def test_remote_audio_transcription_client_round_trip(tmp_path) -> None:
+    def transcribe(audio_path: str, model_name: str, language: str) -> str:
+        assert Path(audio_path).read_bytes() == b"audio-bytes"
+        assert model_name == "small"
+        assert language == "nl"
+        return "Hallo wereld"
+
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        build_handler(GpuApiService(FakeBackend(), "test-token", audio_transcriber=transcribe)),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    audio_path = tmp_path / "clip.m4a"
+    audio_path.write_bytes(b"audio-bytes")
+    try:
+        backend = RemoteAudioTranscriptionBackend(f"http://127.0.0.1:{server.server_port}/v1", "test-token")
+        backend.load()
+        text = backend.transcribe(str(audio_path), "faster-whisper", "small", "nl")
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+
+    assert text == "Hallo wereld"

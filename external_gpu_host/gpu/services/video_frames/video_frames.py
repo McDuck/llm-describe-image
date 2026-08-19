@@ -42,10 +42,7 @@ def extract_video_file(
         timestamps = sample_timestamps(duration, fps, frame_interval_seconds, max_frames)
         frames: List[ExtractedVideoFrame] = []
         for number, timestamp in enumerate(timestamps, start=1):
-            capture.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000.0)
-            success, frame = capture.read()
-            if not success:
-                raise RuntimeError(f"Could not extract frame at {timestamp:.3f} seconds")
+            frame = _read_frame_at_timestamp(capture, cv2, video_path, timestamp, fps, frame_count)
             encoded, jpeg = cv2.imencode(".jpg", frame)
             if not encoded:
                 raise RuntimeError(f"Could not encode frame at {timestamp:.3f} seconds")
@@ -53,6 +50,37 @@ def extract_video_file(
         return duration, frames
     finally:
         capture.release()
+
+
+def _read_frame_at_timestamp(
+    capture: object,
+    cv2: object,
+    video_path: str,
+    timestamp: float,
+    fps: float,
+    frame_count: int,
+):
+    """Seek first, then decode sequentially when an imprecise seek fails."""
+    capture.set(cv2.CAP_PROP_POS_MSEC, timestamp * 1000.0)
+    success, frame = capture.read()
+    if success:
+        return frame
+
+    # OpenCV/FFmpeg timestamp seeking can fail for valid VFR videos or sparse
+    # keyframe streams. A fresh sequential decode is slower, but avoids
+    # rejecting the entire video because one random access position failed.
+    fallback = cv2.VideoCapture(video_path)
+    if not fallback.isOpened():
+        raise RuntimeError(f"Could not reopen uploaded video for frame fallback: {video_path}")
+    try:
+        target_frame = min(max(0, int(round(timestamp * fps))), frame_count - 1)
+        for _ in range(target_frame + 1):
+            success, frame = fallback.read()
+            if not success:
+                raise RuntimeError(f"Could not extract frame at {timestamp:.3f} seconds")
+        return frame
+    finally:
+        fallback.release()
 
 
 def sample_timestamps(

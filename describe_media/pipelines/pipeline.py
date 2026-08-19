@@ -161,6 +161,8 @@ class Pipeline:
             return task.format_status(name)
         output_symbols = {
             "ExtractVideo": "f",
+            "Transcribe": "t",
+            "DescribeVideo": "v",
             "ImageRouter": "i",
             "Metadata": "m",
             "Resize": "p",

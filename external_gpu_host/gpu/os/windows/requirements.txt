@@ -1,2 +1,3 @@
 -r ../../services/recognition/os/windows/requirements.txt
+-r ../../services/transcription/requirements.txt
 -r ../../services/video_frames/requirements.txt

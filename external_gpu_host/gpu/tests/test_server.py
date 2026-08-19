@@ -53,3 +53,18 @@ def test_service_serialises_video_frame_extraction(tmp_path) -> None:
     assert seen == [(b"video", 5.0, 24)]
     assert duration == 1.5
     assert frames[0].jpeg_bytes == b"jpeg"
+
+
+def test_service_serialises_audio_transcription(tmp_path) -> None:
+    seen = []
+
+    def transcribe(path: str, model_name: str, language: str) -> str:
+        seen.append((Path(path).read_bytes(), model_name, language))
+        return "Hello world"
+
+    service = GpuApiService(FakeBackend(), "test-token", audio_transcriber=transcribe)
+    audio_path = tmp_path / "clip.m4a"
+    audio_path.write_bytes(b"audio")
+
+    assert service.transcribe_audio(str(audio_path), "faster-whisper", "small", "en") == "Hello world"
+    assert seen == [(b"audio", "small", "en")]

@@ -42,6 +42,8 @@ except ImportError:  # pragma: no cover - exercised by the standalone entry poin
 
 from external_gpu_host.gpu.services.video_frames.http_api import serve_video_frames_request
 from external_gpu_host.gpu.services.video_frames.video_frames import ExtractedVideoFrame, extract_video_file
+from external_gpu_host.gpu.services.transcription.http_api import serve_audio_transcription_request
+from external_gpu_host.gpu.services.transcription.models import get_backend as get_transcription_backend
 
 
 MAX_IMAGE_BYTES = 32 * 1024 * 1024
@@ -57,10 +59,13 @@ class GpuApiService:
         backend: InsightFaceBackend,
         token: str,
         video_extractor: Callable[[str, float, int], Tuple[float, List[ExtractedVideoFrame]]] = extract_video_file,
+        audio_transcriber: Optional[Callable[[str, str, str], str]] = None,
     ) -> None:
         self.backend = backend
         self.token = token
         self.video_extractor = video_extractor
+        self.audio_transcriber = audio_transcriber
+        self.transcription_backends = {}
         # DirectML sessions permit one Run call at a time; serialising also bounds
         # concurrent decoder/VRAM use while a video request is being handled.
         self.inference_lock = threading.Lock()
@@ -72,6 +77,16 @@ class GpuApiService:
     def extract_video_frames(self, video_path: str, frame_interval_seconds: float, max_frames: int) -> Tuple[float, List[ExtractedVideoFrame]]:
         with self.inference_lock:
             return self.video_extractor(video_path, frame_interval_seconds, max_frames)
+
+    def transcribe_audio(self, audio_path: str, backend_name: str, model_name: str, language: str) -> str:
+        with self.inference_lock:
+            if self.audio_transcriber is not None:
+                return self.audio_transcriber(audio_path, model_name, language)
+            backend = self.transcription_backends.get(backend_name)
+            if backend is None:
+                backend = get_transcription_backend(backend_name)
+                self.transcription_backends[backend_name] = backend
+            return backend.transcribe(audio_path, model_name, language)
 
     def authorised(self, header: str) -> bool:
         return hmac.compare_digest(header, f"Bearer {self.token}")
@@ -97,6 +112,9 @@ def build_handler(service: GpuApiService):
                 return
             if self.path == "/v1/video-frames":
                 serve_video_frames_request(self, service.extract_video_frames)
+                return
+            if self.path == "/v1/audio-transcriptions":
+                serve_audio_transcription_request(self, service.transcribe_audio)
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 

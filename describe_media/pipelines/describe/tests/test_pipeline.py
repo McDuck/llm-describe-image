@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from describe_media.pipelines.describe.pipeline import DescribePipeline, route_discovered_media, route_resize_targets
+from describe_media.pipelines.describe.pipeline import DescribePipeline, route_discovered_media, route_extracted_video_frame, route_llm_result, route_resize_targets
 from describe_media.tasks.enhance_integrated.task import IntegratedEnhanceTask
 from describe_media.tasks.geolocate_enriched.task import GeolocateEnrichedTask
 from describe_media.tasks.llm.task import LLMTask
@@ -26,6 +26,31 @@ def test_describe_graph_has_no_skip_or_write_nodes():
 def test_describe_routes_videos_to_shortcut_and_frame_extraction():
     assert route_discovered_media("/input/photo.jpg") == "ImageRouter"
     assert route_discovered_media("/input/clip.mp4") == ["ExtractVideo", "Shortcut"]
+    assert route_extracted_video_frame(("/output/clip.frame.jpg", {})) == ["ImageRouter", "Transcribe"]
+    assert route_llm_result({"route": "enhance", "item": ("/output/clip.frame.jpg", {"_source_video_path": "/input/clip.mp4"})}) == ["enhance", "DescribeVideo"]
+
+
+def test_describe_passes_shared_gpu_api_settings_to_recognition_and_extraction(monkeypatch):
+    monkeypatch.setenv("GPU_API_BASE", "http://gpu-host.example:5002/v1")
+    monkeypatch.setenv("GPU_API_TOKEN", "test-token")
+    monkeypatch.setenv("GPU_API_TIMEOUT_S", "30")
+    pipeline = DescribePipeline()
+    extraction_config = next(item for item in pipeline.PIPELINE_CONFIG if item["name"] == "ExtractVideo")
+    recognition_config = next(item for item in pipeline.PIPELINE_CONFIG if item["name"] == "Recognition")
+    transcription_config = next(item for item in pipeline.PIPELINE_CONFIG if item["name"] == "Transcribe")
+
+    extraction_settings = extraction_config["kwargs_builder"](pipeline)
+    recognition_settings = recognition_config["kwargs_builder"](pipeline)
+
+    for settings in (extraction_settings, recognition_settings):
+        assert settings["remote_api_base"] == "http://gpu-host.example:5002/v1"
+        assert settings["remote_api_token"] == "test-token"
+        assert settings["remote_timeout_seconds"] == 30.0
+
+    transcription_settings = transcription_config["kwargs_builder"](pipeline)
+    assert transcription_settings["remote_api_base"] == "http://gpu-host.example:5002/v1"
+    assert transcription_settings["remote_api_token"] == "test-token"
+    assert transcription_settings["remote_timeout_seconds"] == 30.0
 
 
 def test_describe_routes_resized_images_to_a_matching_shortcut():
@@ -104,6 +129,19 @@ def test_llm_uses_geolocation_when_it_arrives_before_required_inputs():
     result = task.execute(("/input/photo.jpg", {**common, "_stage": "recognition", "_recognition": {}}))
 
     assert result["item"][1]["location_str"] == "Amsterdam"
+
+
+def test_llm_waits_for_transcript_only_for_video_frames():
+    task = LLMTask(maximum=1, input_dir="/input", output_dir="/output")
+    task._describe = lambda path, metadata: {"route": "enhance", "item": (path, metadata)}
+    common = {"_output_relative_path": "clip.frame.jpg", "_source_video_path": "/input/clip.mp4"}
+
+    assert task.execute(("/output/clip.frame.jpg", {**common, "_stage": "metadata"})) is None
+    assert task.execute(("/output/clip.frame.jpg", {**common, "_stage": "resize"})) is None
+    assert task.execute(("/output/clip.frame.jpg", {**common, "_stage": "recognition"})) is None
+    result = task.execute(("/output/clip.frame.jpg", {**common, "_stage": "transcript", "_transcript": "spoken words"}))
+
+    assert result["item"][1]["_transcript"] == "spoken words"
 
 
 def test_llm_status_can_render_while_dependency_events_arrive():

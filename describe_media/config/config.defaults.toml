@@ -15,6 +15,14 @@ extensions = [".jpg", ".jpeg", ".png", ".webp"]
 extensions = [".mp4", ".mov", ".mkv", ".avi", ".webm"]
 frame_interval_seconds = 5.0
 max_frames = 24
+# When enabled, send the audio interval represented by every sampled frame to
+# the matching remote transcription backend on the shared GPU worker.
+transcription_enabled = true
+transcription_backend = "faster-whisper"
+transcription_model = "turbo"
+# Optional ISO-639-1 source-language hint, for example "nl" or "en".
+transcription_language = ""
+description_prompt = "Beschrijf deze volledige video in het Nederlands op basis van de beschrijvingen van losse videoframes en het transcript. Geef één samenhangende beschrijving van de gebeurtenissen, personen, omgeving en relevante gesproken inhoud. Noem niet dat je framebeschrijvingen of een transcript gebruikt, en verzin geen details die daar niet uit volgen."
 [resize]
 # Image resizing settings
 max_width = 720

@@ -97,24 +97,30 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Dict[str, Any]]):
         if not isinstance(metadata, dict):
             raise metadata
         stage = metadata.get("_stage")
-        if stage not in (*self.REQUIRED_STAGES, *self.OPTIONAL_STAGES):
+        if stage not in (*self.REQUIRED_STAGES, *self.OPTIONAL_STAGES, "transcript"):
             return None
         key = output_relative_path(input_path, self.input_dir or input_path, metadata)
         with self._parts_lock:
             self._parts.setdefault(key, {})[stage] = (input_path, dict(metadata))
             parts = self._parts[key]
-            if key in self._emitted or not all(required in parts for required in self.REQUIRED_STAGES):
+            required_stages = self._required_stages(parts)
+            if key in self._emitted or not all(required in parts for required in required_stages):
                 return None
 
             merged = self._merged_metadata(parts)
             self._emitted.add(key)
         return self._describe(input_path, merged)
 
+    def _required_stages(self, parts: Dict[str, Tuple[str, Dict[str, Any]]]) -> Tuple[str, ...]:
+        """Video frames wait for their matching audio interval; images do not."""
+        metadata = next(iter(parts.values()))[1]
+        return (*self.REQUIRED_STAGES, "transcript") if metadata.get("_source_video_path") else self.REQUIRED_STAGES
+
     def _merged_metadata(self, parts: Dict[str, Tuple[str, Dict[str, Any]]]) -> Dict[str, Any]:
         merged: Dict[str, Any] = {}
         # Metadata owns EXIF/path values; later stages add only their stage fields.
         # Geolocation contributes only when it completed before the LLM started.
-        for stage in (*self.REQUIRED_STAGES, *self.OPTIONAL_STAGES):
+        for stage in (*self.REQUIRED_STAGES, "transcript", *self.OPTIONAL_STAGES):
             if stage in parts:
                 merged.update(parts[stage][1])
         merged.pop("_stage", None)
@@ -174,6 +180,10 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Dict[str, Any]]):
                     "en alleen voor de persoon op de opgegeven face_bbox. Verzin nooit een identiteit. "
                     "Beschrijf per genoemde persoon alleen zichtbare handelingen in deze foto."
                 )
+
+            transcript = metadata.get("_transcript")
+            if isinstance(transcript, str) and transcript:
+                enhanced_prompt += f"\n\nTranscript van het audiofragment bij deze videoframe:\n{transcript}"
             
             # Run LLM inference
             content = self.backend.respond(self.model, enhanced_prompt, image_handle)
@@ -225,12 +235,16 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Dict[str, Any]]):
         with self._parts_lock:
             waiting = [parts for key, parts in self._parts.items() if key not in self._emitted]
             missing = {
-                stage: sum(1 for parts in waiting if stage not in parts)
-                for stage in ("resize", "recognition")
+                "resize": sum(1 for parts in waiting if "resize" not in parts),
+                "recognition": sum(1 for parts in waiting if "recognition" not in parts),
+                "transcript": sum(
+                    1 for parts in waiting
+                    if "transcript" in self._required_stages(parts) and "transcript" not in parts
+                ),
             }
-            ready = sum(1 for parts in waiting if all(stage in parts for stage in self.REQUIRED_STAGES))
+            ready = sum(1 for parts in waiting if all(stage in parts for stage in self._required_stages(parts)))
         return (
             f"{name}: {len(waiting)}Q "
-            f"[p{missing['resize']} r{missing['recognition']} ready{ready}] "
+            f"[p{missing['resize']} r{missing['recognition']} t{missing['transcript']} ready{ready}] "
             f"{self.total.skipped}S {len(self.active)}A {self._processed}P {self._errors}F ->{self._written}t"
         )

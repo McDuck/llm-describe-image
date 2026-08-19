@@ -1,6 +1,6 @@
 # Remote recognition worker
 
-The shared GPU API owns remote InsightFace inference and optional video-frame decoding. The two services live below `services/`: face recognition in [`services/recognition/`](services/recognition/) and frame extraction in [`services/video_frames/`](services/video_frames/). Describe Media remains responsible for clustering, matching, review artifacts, index training, and writing frame files. Its authenticated API is `GET /v1/health`, `POST /v1/recognition`, and `POST /v1/video-frames`.
+The shared GPU API owns remote InsightFace inference, video-frame decoding, and Faster-Whisper transcription. The services live below `services/`: face recognition in [`services/recognition/`](services/recognition/), frame extraction in [`services/video_frames/`](services/video_frames/), and transcription in [`services/transcription/`](services/transcription/). Describe Media remains responsible for clustering, matching, review artifacts, index training, and writing frame files. Its authenticated API is `GET /v1/health`, `POST /v1/recognition`, `POST /v1/video-frames`, and `POST /v1/audio-transcriptions`.
 
 ## Linux local worker
 
@@ -35,4 +35,6 @@ GPU_API_TOKEN=replace-with-a-long-random-secret
 GPU_API_TIMEOUT_S=120
 ```
 
-`POST /v1/video-frames` receives the source video as an authenticated binary upload and responds with sampled JPEGs. The pipeline writes those JPEGs and its normal manifest locally, so all downstream behavior is unchanged. The worker serialises it with recognition to protect GPU/decoder resources. It accepts uploads up to 8 GiB by default; set `VIDEO_FRAME_API_MAX_UPLOAD_BYTES` to lower that ceiling. Verify from that host with an authenticated request to `http://127.0.0.1:15003/v1/health`. Do not bind either the worker or tunnel listener to a LAN interface.
+`POST /v1/video-frames` receives the source video as an authenticated binary upload and responds with sampled JPEGs. `POST /v1/audio-transcriptions` receives only the short extracted audio intervals and selects an implementation from `services/transcription/models/`; Faster-Whisper is configured by default with `TRANSCRIPTION_BACKEND=faster-whisper` and `TRANSCRIPTION_MODEL=turbo` in `gpu/.env`. The pipeline writes JPEGs and transcript artifacts locally, so downstream behavior is unchanged. The worker serialises GPU inference to protect VRAM. Verify from that host with an authenticated request to `http://127.0.0.1:15003/v1/health`. Do not bind either the worker or tunnel listener to a LAN interface.
+
+For Faster-Whisper GPU acceleration with the standard CTranslate2 wheels, use an NVIDIA CUDA-capable worker and set `TRANSCRIPTION_DEVICE=cuda` and `TRANSCRIPTION_COMPUTE_TYPE=float16` (with the required CUDA/cuDNN runtime). The existing Windows DirectML setup can host the endpoint, but does not accelerate Faster-Whisper through DirectML.

@@ -4,7 +4,7 @@ Describe Media discovers images and video frames, collects metadata, runs review
 
 ## Run
 
-From the repository root, copy `describe_media/.env.example` to `describe_media/.env`, set `INPUT_DIR`, `OUTPUT_DIR`, and `OPENAI_API_KEY`, then choose either local Python or Docker:
+From the repository root, copy `describe_media/.env.example` to `describe_media/.env`, set `INPUT_DIR` and `OUTPUT_DIR`, then choose either local Python or Docker. The example targets a local OpenAI-compatible endpoint; set `OPENAI_API_BASE=https://api.openai.com/v1` and `OPENAI_API_KEY` if you prefer the hosted OpenAI API:
 
 ```powershell
 python -m describe_media.describe_media describe <input-dir> <output-dir>
@@ -13,13 +13,15 @@ docker compose --env-file describe_media/.env -f describe_media/docker-compose.y
 
 The normal `describe` graph discovers media, creates video frames, persists metadata, resizes images for the LLM, runs recognition on the original image, calls the LLM, and adds context enhancement. Metadata, resize, and recognition are complete before captioning; reverse geocoding is optional and never holds up captioning. A failed caption produces an `.error.txt`; use `--retry-failed` to retry those items without reprocessing successful ones.
 
+Video transcription is enabled by default. The pipeline extracts each frame's non-overlapping audio interval locally with `ffmpeg`, then sends that small audio segment to the authenticated remote GPU worker. `VIDEO_TRANSCRIPTION_BACKEND=faster-whisper` selects the current remote backend and `VIDEO_TRANSCRIPTION_MODEL=turbo` selects its local Whisper model size or path; neither value is an API model. Configure `GPU_API_BASE` and `GPU_API_TOKEN` before processing videos, or explicitly set `VIDEO_TRANSCRIPTION_ENABLED=false` to skip transcript generation. It writes one cacheable transcript beside each frame, for example `OUTPUT_DIR/trip/clip.mp4.frame-0002-t0005.000.jpg.transcript.json`, then builds `OUTPUT_DIR/trip/clip.mp4.transcript.json` and a WebVTT subtitle file at `OUTPUT_DIR/trip/clip.mp4.transcript.vtt`. Once every frame caption is ready, a text-only `DescribeVideo` stage combines those captions and the whole transcript into the source video description at `OUTPUT_DIR/trip/clip.mp4.txt`; no image is sent for that final call.
+
 `enhance` is a targeted pass that reads existing captions, gathers nearby same-directory/date descriptions, and writes `<image>.enhanced.txt`. Tune its model, prompt, context window, and item limits in `config/config.defaults.toml`. The `huggingface` backend supports local transformer inference (including automatic device selection and optional quantization); select it with `BACKEND=huggingface` and configure the `[huggingface]` settings in that file.
 
 The task engine uses bounded queues, configurable worker counts, backpressure, and orderly Ctrl+C shutdown. Define a new pipeline in `pipelines/`, register it in `pipelines/__init__.py`, and add individual stages below `tasks/`.
 
 ## Recognition
 
-The normal `describe` workflow matches only identities that a human has reviewed. `recognition-cluster` creates provisional `cluster-*` review folders and `recognition-train` creates `OUTPUT_DIR/recognition/model-manifest.json` plus inspectable per-identity models. See [`recognition/README.md`](recognition/README.md), the pipeline READMEs, and [`../external_gpu_host/recognition/README.md`](../external_gpu_host/recognition/README.md) for a standalone remote GPU worker.
+The normal `describe` workflow matches only identities that a human has reviewed. `recognition-cluster` creates provisional `cluster-*` review folders and `recognition-train` creates `OUTPUT_DIR/recognition/model-manifest.json` plus inspectable per-identity models. See [`recognition/README.md`](recognition/README.md), the pipeline READMEs, and [`../external_gpu_host/gpu/README.md`](../external_gpu_host/gpu/README.md) for the shared remote GPU API.
 
 Install local inference with `pip install -e "describe_media[recognition]"`; install video support with `pip install -e "describe_media[video]"`. The browser reviewer is a separate app in [`../recognition_review/README.md`](../recognition_review/README.md).
 

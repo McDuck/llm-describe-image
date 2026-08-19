@@ -56,17 +56,17 @@ $sshOptions = @(
 )
 $target = "{0}@{1}:{2}/" -f $RemoteUser, $RemoteHost, $RemotePath
 
-Write-Host "Copying application files to $RemoteUser@$RemoteHost`:$RemotePath (preserving remote config/.env)..."
+Write-Host "Copying application files to $RemoteUser@$RemoteHost`:$RemotePath (preserving remote describe_media/.env)..."
 & scp -r @sshOptions @releaseItems $target
 if ($LASTEXITCODE -ne 0) {
     throw "File transfer failed with exit code $LASTEXITCODE."
 }
 
-$remoteEnvCommand = "cd -- '$RemotePath' && test -f describe_media/config/.env && sed -i -E 's|^INPUT_DIR=.*|INPUT_DIR=$InputDir|; s|^OUTPUT_DIR=.*|OUTPUT_DIR=$OutputDir|; s|^OPENAI_API_BASE=.*|OPENAI_API_BASE=$OpenAIApiBase|' describe_media/config/.env"
+$remoteEnvCommand = "cd -- '$RemotePath' && test -f describe_media/.env && sed -i -E 's|^INPUT_DIR=.*|INPUT_DIR=$InputDir|; s|^OUTPUT_DIR=.*|OUTPUT_DIR=$OutputDir|; s|^OPENAI_API_BASE=.*|OPENAI_API_BASE=$OpenAIApiBase|' describe_media/.env"
 Write-Host "Setting the Linux input and output mount paths..."
 & ssh @sshOptions "$RemoteUser@$RemoteHost" $remoteEnvCommand
 if ($LASTEXITCODE -ne 0) {
-    throw "Remote config/.env update failed with exit code $LASTEXITCODE."
+    throw "Remote describe_media/.env update failed with exit code $LASTEXITCODE."
 }
 
 if ($NoRun) {
@@ -75,7 +75,7 @@ if ($NoRun) {
 }
 
 $upArguments = if ($NoBuild) { "up -d describe_media" } else { "up -d --build describe_media" }
-$remoteCommand = "cd -- '$RemotePath' && docker compose --env-file describe_media/config/.env -f describe_media/docker-compose.yml $upArguments && docker compose --env-file describe_media/config/.env -f describe_media/docker-compose.yml ps"
+$remoteCommand = "cd -- '$RemotePath' && docker compose --env-file describe_media/.env -f describe_media/docker-compose.yml $upArguments && docker compose --env-file describe_media/.env -f describe_media/docker-compose.yml ps"
 
 Write-Host "Starting the Docker Compose app..."
 & ssh @sshOptions "$RemoteUser@$RemoteHost" $remoteCommand

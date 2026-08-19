@@ -9,4 +9,4 @@ OPENAI_API_BASE=http://127.0.0.1:15002/v1
 OPENAI_API_KEY=
 ```
 
-Run `ssh -N -R 127.0.0.1:15002:127.0.0.1:5001 deploy@pipeline-host` from the Windows GPU host, then set the values above in the Linux host's `describe_media/config/.env`.
+Run `ssh -N -R 127.0.0.1:15002:127.0.0.1:5001 deploy@pipeline-host` from the Windows GPU host, then set the values above in the Linux host's `describe_media/.env`.

@@ -43,7 +43,7 @@ reverse_geocode_gps = false  # Reverse geocode GPS to human-readable location (r
 backend = "openai"
 
 [openai]
-# OpenAI API settings. Set OPENAI_API_KEY in config/.env or the environment.
+# OpenAI API settings. Set OPENAI_API_KEY in .env or the environment.
 api_base = "https://api.openai.com/v1"
 timeout_s = 600  # 10 minutes in seconds
 

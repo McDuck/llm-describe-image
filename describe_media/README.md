@@ -4,11 +4,11 @@ Describe Media discovers images and video frames, collects metadata, runs review
 
 ## Run
 
-From the repository root, copy `describe_media/config/.env.example` to `describe_media/config/.env`, set `INPUT_DIR`, `OUTPUT_DIR`, and `OPENAI_API_KEY`, then choose either local Python or Docker:
+From the repository root, copy `describe_media/.env.example` to `describe_media/.env`, set `INPUT_DIR`, `OUTPUT_DIR`, and `OPENAI_API_KEY`, then choose either local Python or Docker:
 
 ```powershell
 python -m describe_media.describe_media describe <input-dir> <output-dir>
-docker compose --env-file describe_media/config/.env -f describe_media/docker-compose.yml up --build describe_media
+docker compose --env-file describe_media/.env -f describe_media/docker-compose.yml up --build describe_media
 ```
 
 The normal `describe` graph discovers media, creates video frames, persists metadata, resizes images for the LLM, runs recognition on the original image, calls the LLM, and adds context enhancement. Metadata, resize, and recognition are complete before captioning; reverse geocoding is optional and never holds up captioning. A failed caption produces an `.error.txt`; use `--retry-failed` to retry those items without reprocessing successful ones.
@@ -28,13 +28,13 @@ Install local inference with `pip install -e "describe_media[recognition]"`; ins
 Compose targets Linux hosts with existing local or network-mounted storage. It uses host networking so loopback-only reverse SSH tunnels remain private and reachable from the application container:
 
 ```powershell
-docker compose --env-file describe_media/config/.env -f describe_media/docker-compose.yml up --build describe_media
+docker compose --env-file describe_media/.env -f describe_media/docker-compose.yml up --build describe_media
 
 # Linux-host, index-only recognition training.
-docker compose --env-file describe_media/config/.env -f describe_media/docker-compose.yml up --build recognition-train
+docker compose --env-file describe_media/.env -f describe_media/docker-compose.yml up --build recognition-train
 ```
 
-Compose bind-mounts the existing paths from `config/.env`; it does not stage data. `scripts/release-remote-host.ps1` deploys the application to a Linux host and starts the `describe_media` service.
+Compose bind-mounts the existing paths from `.env`; it does not stage data. To use a different container environment file, set `DESCRIBE_MEDIA_ENV_FILE` to its path relative to this Compose file. `scripts/release-remote-host.ps1` deploys the application to a Linux host and starts the `describe_media` service.
 
 ## Windows KoboldCpp
 

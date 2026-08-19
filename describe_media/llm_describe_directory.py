@@ -11,7 +11,7 @@ from pathlib import Path
 
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent / "config" / ".env")
+    load_dotenv(Path(__file__).resolve().parent / ".env")
 except Exception:
     pass
 

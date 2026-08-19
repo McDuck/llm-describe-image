@@ -10,7 +10,7 @@ x-app: &app
   working_dir: /app
   network_mode: host
   env_file:
-    - ${DESCRIBE_MEDIA_ENV_FILE:-config/.env}
+    - ${DESCRIBE_MEDIA_ENV_FILE:-.env}
   environment:
     INPUT_DIR: /data/input
     OUTPUT_DIR: /data/output
@@ -20,11 +20,11 @@ x-app: &app
     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   volumes:
     - type: bind
-      source: ${INPUT_DIR:?Set INPUT_DIR in config/.env to the Linux storage mount path}
+      source: ${INPUT_DIR:?Set INPUT_DIR in .env to the Linux storage mount path}
       target: /data/input
       read_only: true
     - type: bind
-      source: ${OUTPUT_DIR:?Set OUTPUT_DIR in config/.env to a writable Linux path}
+      source: ${OUTPUT_DIR:?Set OUTPUT_DIR in .env to a writable Linux path}
       target: /data/output
 
 services:

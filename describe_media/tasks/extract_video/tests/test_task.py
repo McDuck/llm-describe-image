@@ -49,6 +49,25 @@ def test_extract_video_emits_stable_frame_paths_and_reuses_manifest(tmp_path: Pa
     assert len(manifest["frames"]) == 3
 
 
+def test_extract_video_reports_a_missing_moov_atom_without_starting_ffmpeg(tmp_path: Path) -> None:
+    input_root = tmp_path / "input"
+    output_root = tmp_path / "output"
+    input_root.mkdir()
+    video_path = input_root / "partial.mp4"
+    video_path.write_bytes(b"\x00\x00\x00\x18ftypisom\x00\x00\x00\x00isomiso2")
+
+    task = ExtractVideoTask(
+        maximum=1,
+        input_dir=str(input_root),
+        output_dir=str(output_root),
+        frame_interval_seconds=1,
+        max_frames=3,
+    )
+
+    with pytest.raises(RuntimeError, match="missing moov atom"):
+        task.execute(str(video_path))
+
+
 def test_frame_skip_check_uses_the_logical_output_path(tmp_path: Path) -> None:
     input_root = tmp_path / "input"
     output_root = tmp_path / "output"

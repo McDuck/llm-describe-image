@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import struct
 import sys
 import tempfile
 from typing import Any, Dict, List, Optional, Tuple
@@ -11,6 +12,7 @@ from describe_media.tasks.task import Task
 
 
 MANIFEST_SCHEMA_VERSION = 1
+_ISOBMFF_EXTENSIONS = {".3g2", ".3gp", ".m4a", ".mj2", ".mov", ".mp4"}
 
 
 class ExtractVideoTask(Task[str, List[Tuple[str, Dict[str, Any]]]]):
@@ -75,6 +77,7 @@ class ExtractVideoTask(Task[str, List[Tuple[str, Dict[str, Any]]]]):
             return None
 
     def _extract(self, input_path: str, manifest_path: str) -> Dict[str, Any]:
+        self._validate_container_index(input_path)
         try:
             import cv2  # type: ignore
         except ImportError as error:
@@ -122,6 +125,51 @@ class ExtractVideoTask(Task[str, List[Tuple[str, Dict[str, Any]]]]):
         }
         self._write_manifest(manifest_path, manifest)
         return manifest
+
+    @staticmethod
+    def _validate_container_index(input_path: str) -> None:
+        """Fail clearly before OpenCV invokes FFmpeg for an incomplete MP4/MOV.
+
+        An ISO base media file must include a top-level ``moov`` atom to be
+        seekable.  Checking it here prevents FFmpeg's noisy low-level error and
+        gives the caller an actionable, retryable failure marker instead.
+        """
+        if os.path.splitext(input_path)[1].lower() not in _ISOBMFF_EXTENSIONS:
+            return
+
+        try:
+            file_size = os.path.getsize(input_path)
+            offset = 0
+            has_movie_atom = False
+            with open(input_path, "rb") as handle:
+                while offset + 8 <= file_size:
+                    handle.seek(offset)
+                    header = handle.read(8)
+                    atom_size, atom_type = struct.unpack(">I4s", header)
+                    header_size = 8
+                    if atom_size == 1:
+                        extended_size = handle.read(8)
+                        if len(extended_size) != 8:
+                            break
+                        atom_size = struct.unpack(">Q", extended_size)[0]
+                        header_size = 16
+                    elif atom_size == 0:
+                        atom_size = file_size - offset
+
+                    if atom_size < header_size or offset + atom_size > file_size:
+                        break
+                    if atom_type == b"moov":
+                        has_movie_atom = True
+                        break
+                    offset += atom_size
+        except OSError as error:
+            raise RuntimeError(f"Could not read video file: {input_path}") from error
+
+        if not has_movie_atom:
+            raise RuntimeError(
+                f"Video is incomplete or corrupt (missing moov atom): {input_path}. "
+                "Wait for the copy/export to finish, then replace the source file and rerun with --retry-failed."
+            )
 
     def _sample_timestamps(self, duration: float, fps: float) -> List[float]:
         requested = max(1, int(math.ceil(duration / self.frame_interval_seconds)))

@@ -171,13 +171,13 @@ class Pipeline:
             "FixJPEG": "j",
             "VideoError": "E",
         }
-        fields = [f"{len(task.queue)}Q"]
-        if task.active:
-            fields.append(f"{len(task.active)}A")
-        if task.total.failed:
-            fields.append(f"{task.total.failed}F")
-        if task.total.skipped:
-            fields.append(f"{task.total.skipped}S")
+        fields = [
+            f"{len(task.queue)}Q",
+            f"{task.total.skipped}S",
+            f"{len(task.active)}A",
+            f"{task.total.processed}P",
+            f"{task.total.failed}F",
+        ]
         return f"{name}: {' '.join(fields)} ->{task.total.output}{output_symbols.get(name, 'D')}"
     
     def _worker_thread(

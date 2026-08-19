@@ -16,4 +16,4 @@ def test_discover_status_separates_directories_images_and_videos(tmp_path):
     files, directories = task.execute(str(tmp_path))
     task.finish(str(tmp_path), len(files) + len(directories))
 
-    assert task.format_status("Discover").endswith("1d>1d1i1v")
+    assert task.format_status("Discover") == "Discover: 0Q 0S 0A 1P 0F ->1d1i1v"

@@ -46,6 +46,11 @@ class TaskStats:
     def skip(self) -> None:
         """Record work avoided because an existing result or terminal marker applies."""
         self.skipped += 1
+
+    @property
+    def processed(self) -> int:
+        """Return completed items that required work during this run."""
+        return max(0, self.done - self.skipped)
     
     def format(self) -> str:
         """Format stats as string: [input>][failed F][skipped S][rejected R]output D"""

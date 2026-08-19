@@ -9,6 +9,7 @@ from describe_media.tasks.geolocate_enriched.task import GeolocateEnrichedTask
 from describe_media.tasks.llm.task import LLMTask
 from describe_media.tasks.resize.task import ResizeTask
 from describe_media.tasks.shortcut.task import ShortcutTask
+from describe_media.tasks.task import Task
 
 
 def test_describe_graph_has_no_skip_or_write_nodes():
@@ -32,6 +33,20 @@ def test_describe_routes_resized_images_to_a_matching_shortcut():
     assert route_resize_targets(("/input/photo.jpg", {"_shortcut_output_relative_path": "photo.resized.jpg"})) == [
         "Recognition", "LLM", "Shortcut"
     ]
+
+
+def test_describe_status_uses_queue_skip_active_processed_failure_order():
+    pipeline = DescribePipeline()
+    task = Task(maximum=1)
+    task.queue.append("queued")
+    task.active.append("active")
+    for _ in range(5):
+        task.total.finish()
+    task.total.skip()
+    task.total.skip()
+    task.total.fail()
+
+    assert pipeline._format_task_status("Resize", task) == "Resize: 1Q 2S 1A 3P 1F ->5p"
 
 
 def test_resized_image_shortcut_uses_the_resized_output_name(tmp_path):

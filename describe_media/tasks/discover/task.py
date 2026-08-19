@@ -167,13 +167,15 @@ class DiscoverTask(Task[str, Tuple[List[str], List[str]]]):
 
     def format_status(self, name: str) -> str:
         """Show discovery inputs and emitted directories, images, and videos."""
-        fields = [f"{len(self.queue)}Q"]
-        if self.active:
-            fields.append(f"{len(self.active)}A")
-        if self.total.failed:
-            fields.append(f"{self.total.failed}F")
+        fields = [
+            f"{len(self.queue)}Q",
+            f"{self.total.skipped}S",
+            f"{len(self.active)}A",
+            f"{self.total.processed}P",
+            f"{self.total.failed}F",
+        ]
         return (
-            f"{name}: {' '.join(fields)} ->{self.total.input}d>"
+            f"{name}: {' '.join(fields)} ->"
             f"{self._total_discovered_directories}d"
             f"{self._total_discovered_images}i"
             f"{self._total_discovered_videos}v"

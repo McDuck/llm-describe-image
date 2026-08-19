@@ -64,6 +64,7 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Dict[str, Any]]):
         # iteration".
         self._parts_lock = threading.Lock()
         self._written = 0
+        self._processed = 0
         self._errors = 0
 
     def load(self) -> None:
@@ -178,6 +179,7 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Dict[str, Any]]):
             content = self.backend.respond(self.model, enhanced_prompt, image_handle)
             self.writer.execute((input_path, content, metadata))
             self._written += 1
+            self._processed += 1
             return {"route": "enhance", "item": (input_path, metadata)}
             
         except Exception as e:
@@ -230,5 +232,5 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Dict[str, Any]]):
         return (
             f"{name}: {len(waiting)}Q "
             f"[p{missing['resize']} r{missing['recognition']} ready{ready}] "
-            f"{self.total.skipped}S {len(self.active)}A {self._errors}F ->{self._written}t"
+            f"{self.total.skipped}S {len(self.active)}A {self._processed}P {self._errors}F ->{self._written}t"
         )

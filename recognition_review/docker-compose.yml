@@ -1,0 +1,26 @@
+name: recognition-review
+
+services:
+  recognition-review-api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    image: recognition-review-api:local
+    environment:
+      RECOGNITION_ROOT: /data/output/recognition
+      REVIEW_PORT: 8080
+    volumes:
+      - type: bind
+        source: ${OUTPUT_DIR:?Set OUTPUT_DIR in config/.env to the Linux storage output mount}
+        target: /data/output
+    expose:
+      - "8080"
+
+  recognition-review-ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    depends_on:
+      - recognition-review-api
+    ports:
+      - "${REVIEW_PORT:-8080}:80"

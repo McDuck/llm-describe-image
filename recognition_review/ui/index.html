@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Recognition review</title>
+    <link rel="stylesheet" href="/app.css">
+  </head>
+  <body>
+    <header>
+      <div><p class="eyebrow">LOCAL FACE REVIEW</p><h1>Label recognition clusters</h1></div>
+      <button class="secondary" id="refresh">Refresh</button>
+    </header>
+    <main>
+      <p id="status" role="status">Loading unlabelled clusters…</p>
+      <section id="empty" hidden><h2>Nothing to review</h2><p>Run the recognition preparation pipeline to create clusters.</p></section>
+      <section id="clusters" aria-live="polite"></section>
+    </main>
+    <template id="cluster-template">
+      <article class="cluster">
+        <div class="cluster-head">
+          <div><p class="eyebrow cluster-id"></p><h2><span class="count"></span> images</h2></div>
+          <div class="cluster-actions">
+            <label>Label this cluster <input class="cluster-label" list="labels" placeholder="Existing or new label"></label>
+            <button class="label-cluster">Label all</button>
+            <button class="danger false-positive-cluster">All false positives</button>
+          </div>
+        </div>
+        <div class="items"></div>
+      </article>
+    </template>
+    <template id="item-template">
+      <article class="item">
+        <img class="crop" alt="Face crop">
+        <div class="item-details"><strong class="filename"></strong><span class="confidence"></span></div>
+        <div class="item-actions">
+          <input class="item-label" list="labels" placeholder="Label this image">
+          <button class="label-item">Move to label</button>
+          <button class="danger false-positive-item">False positive</button>
+        </div>
+      </article>
+    </template>
+    <datalist id="labels"></datalist>
+    <script src="/app.js"></script>
+  </body>
+</html>

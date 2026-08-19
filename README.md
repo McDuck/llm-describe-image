@@ -17,7 +17,7 @@ Copy-Item describe_media\.env.example describe_media\.env
 describe-media describe <input-dir> <output-dir>
 ```
 
-Set `OPENAI_API_KEY` and `INPUT_DIR`/`OUTPUT_DIR` in `describe_media/.env` when using the defaults. For Docker, run:
+Set `INPUT_DIR`/`OUTPUT_DIR` in `describe_media/.env` when using the local OpenAI-compatible defaults. To use the hosted OpenAI API instead, set `OPENAI_API_BASE=https://api.openai.com/v1` and `OPENAI_API_KEY`. For Docker, run:
 
 ```powershell
 docker compose --env-file describe_media/.env -f describe_media/docker-compose.yml up --build describe_media

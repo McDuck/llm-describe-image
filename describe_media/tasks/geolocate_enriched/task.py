@@ -32,11 +32,13 @@ class GeolocateEnrichedTask(GeolocationTask):
         output_path = os.path.join(self.output_dir or "", relative + ".geocode.txt")
         error_path = os.path.join(self.output_dir or "", relative + ".geocode.error.json")
         if not self.enabled:
+            self.record_skip()
             self._write_text(output_path, "N/A")
             metadata["_geocode"] = "N/A"
             metadata["_stage"] = "geolocation"
             return input_path, metadata
         if not self.retry and os.path.exists(output_path):
+            self.record_skip()
             location = self._read(output_path)
             metadata["_geocode"] = location
             if location and location != "N/A":
@@ -44,6 +46,7 @@ class GeolocateEnrichedTask(GeolocationTask):
             metadata["_stage"] = "geolocation"
             return input_path, metadata
         if not self.retry and not self.retry_failed and os.path.exists(error_path):
+            self.record_skip()
             return None
 
         try:

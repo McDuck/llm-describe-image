@@ -57,10 +57,12 @@ class ResizeTask(Task[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any]]]):
                     state = json.load(handle)
                 prepared_path = state.get("prepared_image_path")
                 if isinstance(prepared_path, str) and os.path.exists(prepared_path):
+                    self.record_skip()
                     self._set_prepared_image_metadata(metadata, relative, prepared_path)
                     metadata["_stage"] = "resize"
                     return input_path, metadata
             if not self.retry and not self.retry_failed and os.path.exists(error_path):
+                self.record_skip()
                 return input_path, {**metadata, "_stage": "resize-blocked"}
 
             # Use the best available image as source for resizing
@@ -95,6 +97,7 @@ class ResizeTask(Task[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any]]]):
                 
                 # Skip if already resized (unless --retry flag is set)
                 if not self.retry and os.path.exists(output_path):
+                    self.record_skip()
                     self._set_prepared_image_metadata(metadata, relative, output_path)
                     self._write_state(state_path, relative, output_path)
                     metadata["_stage"] = "resize"

@@ -41,6 +41,7 @@ def test_extract_video_emits_stable_frame_paths_and_reuses_manifest(tmp_path: Pa
     ]
     assert [path for path, _ in second] == [path for path, _ in first]
     assert all(Path(path).is_file() for path, _ in first)
+    assert task.total.skipped == 1
 
     manifest_path = output_root / "clip.mp4.frames.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

@@ -36,9 +36,12 @@ class ExtractVideoTask(Task[str, List[Tuple[str, Dict[str, Any]]]]):
     def execute(self, input_path: str) -> List[Tuple[str, Dict[str, Any]]]:
         error_path = os.path.join(self.output_dir, os.path.relpath(input_path, self.input_dir) + ".frames.error.txt")
         if not self.retry and not self.retry_failed and os.path.exists(error_path):
+            self.record_skip()
             return []
         manifest_path = self._manifest_path(input_path)
         manifest = self._read_valid_manifest(input_path, manifest_path)
+        if manifest is not None:
+            self.record_skip()
         if manifest is None:
             manifest = self._extract(input_path, manifest_path)
         self._remove_error_marker(input_path)

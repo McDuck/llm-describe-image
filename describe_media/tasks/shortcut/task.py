@@ -36,6 +36,7 @@ class ShortcutTask(Task[Any, str]):
             relative = self._shortcut_output_relative_path(input_path, metadata)
             shortcut_path = os.path.join(self.output_dir, relative + ".lnk")
             if os.path.exists(shortcut_path):
+                self.record_skip()
                 return input_path
             
             # Create directories if needed

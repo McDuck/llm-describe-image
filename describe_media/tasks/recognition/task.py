@@ -326,6 +326,7 @@ class RecognitionTask(Task[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any]
                 with output_path.open("r", encoding="utf-8") as handle:
                     cached_payload = json.load(handle)
                 if cached_payload.get("recognition_input") == "original":
+                    self.record_skip()
                     self._sync_cached_review_artifacts(relative_path, metadata, cached_payload)
                     metadata["_recognition"] = cached_payload
                     metadata["_stage"] = "recognition"
@@ -333,8 +334,11 @@ class RecognitionTask(Task[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any]
             except (OSError, ValueError, json.JSONDecodeError):
                 pass
         if not self.retry and not self.retry_failed and error_path.exists():
+            self.record_skip()
             return input_path, {**metadata, "_stage": "recognition-blocked"}
         people: List[Dict[str, Any]] = []
+        if not self.enabled:
+            self.record_skip()
         # Recognition needs the full-resolution source: ResizeTask retains the
         # original path as the task item and stores its LLM-sized derivative in
         # ``_prepared_image_path``.  Do not use that derivative for detection

@@ -176,6 +176,8 @@ class Pipeline:
             fields.append(f"{len(task.active)}A")
         if task.total.failed:
             fields.append(f"{task.total.failed}F")
+        if task.total.skipped:
+            fields.append(f"{task.total.skipped}S")
         return f"{name}: {' '.join(fields)} ->{task.total.output}{output_symbols.get(name, 'D')}"
     
     def _worker_thread(

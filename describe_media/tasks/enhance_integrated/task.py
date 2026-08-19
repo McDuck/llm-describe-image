@@ -53,8 +53,10 @@ class IntegratedEnhanceTask(Task[Tuple[str, Dict[str, Any]], str]):
         provenance_path = os.path.join(self.output_dir, relative + ".enhanced.json")
         error_path = os.path.join(self.output_dir, relative + ".enhanced.error.json")
         if not self.retry and os.path.exists(output_path) and os.path.exists(provenance_path):
+            self.record_skip()
             return output_path
         if not self.retry and not self.retry_failed and os.path.exists(error_path):
+            self.record_skip()
             return None
 
         base_caption_path = os.path.join(self.output_dir, relative + ".txt")

@@ -124,9 +124,11 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Dict[str, Any]]):
         output_path = os.path.join(self.output_dir or "", relative + ".txt")
         error_path = os.path.join(self.output_dir or "", relative + ".error.txt")
         if not self.retry and os.path.exists(output_path):
+            self.record_skip()
             self._written += 1
             return {"route": "enhance", "item": (input_path, metadata)}
         if not self.retry and not self.retry_failed and os.path.exists(error_path):
+            self.record_skip()
             return None
 
         try:
@@ -228,5 +230,5 @@ class LLMTask(Task[Tuple[str, Dict[str, Any]], Dict[str, Any]]):
         return (
             f"{name}: {len(waiting)}Q "
             f"[p{missing['resize']} r{missing['recognition']} ready{ready}] "
-            f"{len(self.active)}A {self._errors}F ->{self._written}t"
+            f"{self.total.skipped}S {len(self.active)}A {self._errors}F ->{self._written}t"
         )

@@ -145,6 +145,8 @@ def test_cached_llm_caption_still_routes_to_enhance(tmp_path):
     result = task.execute((str(input_dir / "photo.jpg"), {**common, "_stage": "recognition", "_recognition": {}}))
 
     assert result["route"] == "enhance"
+    assert task.total.skipped == 1
+    assert "1S" in task.format_status("LLM")
 
 
 def test_disabled_geolocation_completes_the_llm_dependency_without_network(tmp_path):
@@ -164,6 +166,7 @@ def test_disabled_geolocation_completes_the_llm_dependency_without_network(tmp_p
 
     assert result == (str(image_path), {"_output_relative_path": "photo.jpg", "_geocode": "N/A", "_stage": "geolocation"})
     assert (output_dir / "photo.jpg.geocode.txt").read_text(encoding="utf-8") == "N/A\n"
+    assert task.total.skipped == 1
 
 
 def test_geolocation_failure_is_recorded_and_propagated(tmp_path, monkeypatch):

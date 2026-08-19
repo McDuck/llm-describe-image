@@ -6,13 +6,14 @@ OutputType = TypeVar('OutputType')
 
 
 class TaskStats:
-    """Statistics for a task including input/output counts, failures, and rejections."""
+    """Statistics for a task including input/output counts, skips, failures, and rejections."""
     def __init__(self) -> None:
         self.diff_input_output: bool = False
         self.done: int = 0
         self.failed: int = 0
         self.input: int = 0
         self.output: int = 0
+        self.skipped: int = 0
         self.rejected: int = 0
     
     def reset(self) -> None:
@@ -21,6 +22,7 @@ class TaskStats:
         self.failed = 0
         self.input = 0
         self.output = 0
+        self.skipped = 0
         self.rejected = 0
     
     def finish(self, output_count: int = 1) -> None:
@@ -40,14 +42,20 @@ class TaskStats:
         """Record a rejected item."""
         self.rejected += 1
         self.input += 1
+
+    def skip(self) -> None:
+        """Record work avoided because an existing result or terminal marker applies."""
+        self.skipped += 1
     
     def format(self) -> str:
-        """Format stats as string: [input>][failed F][rejected R]output D"""
+        """Format stats as string: [input>][failed F][skipped S][rejected R]output D"""
         fmt = ""
         if self.diff_input_output:
             fmt = f"{self.input}>"
         if self.failed > 0:
             fmt = f"{fmt}{self.failed}F"
+        if self.skipped > 0:
+            fmt = f"{fmt}{self.skipped}S"
         if self.rejected > 0:
             fmt = f"{fmt}{self.rejected}R"
         fmt = f"{fmt}{self.output}D"
@@ -157,6 +165,11 @@ class Task(Generic[InputType, OutputType]):
             self.active.remove(item)
         self.recent.reject()
         self.total.reject()
+
+    def record_skip(self) -> None:
+        """Record a task item whose expensive work was avoided during this run."""
+        self.recent.skip()
+        self.total.skip()
 
     def reset_recent(self) -> None:
         """Reset recent counters."""

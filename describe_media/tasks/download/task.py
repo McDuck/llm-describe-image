@@ -76,12 +76,14 @@ class MetadataTask(DownloadTask):
         if not self.retry and os.path.exists(output_path):
             try:
                 metadata = self._read(output_path)
+                self.record_skip()
                 metadata.update(inherited)
                 metadata["_stage"] = "metadata"
                 return input_path, metadata
             except (OSError, ValueError, TypeError, json.JSONDecodeError):
                 pass
         if not self.retry and not self.retry_failed and os.path.exists(error_path):
+            self.record_skip()
             return None
 
         try:

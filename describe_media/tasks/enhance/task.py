@@ -1,0 +1,224 @@
+import os
+import sys
+from typing import Optional, Tuple, List
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+# Add local llms directory to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'llm'))
+
+from describe_media.tasks.task import Task
+from llms import get_backend
+from llms.base import LLMBackend
+
+
+class EnhanceTask(Task[Tuple[str, str, List[str]], Tuple[str, str]]):
+    """
+    Use LLM to enhance description based on context from nearby images.
+    
+    Input: (image_path, original_description, context_descriptions)
+    Output: (image_path, enhanced_description)
+    """
+    
+    def __init__(
+        self,
+        maximum: int = 1,
+        model_name: Optional[str] = None,
+        prompt: Optional[str] = None,
+        backend_name: Optional[str] = None,
+        input_dir: Optional[str] = None,
+        output_dir: Optional[str] = None,
+        context_template: Optional[str] = None,
+        context_item_template: Optional[str] = None,
+        context_item_max_length: Optional[int] = None,
+        max_context_in_prompt: Optional[int] = None,
+        max_context_length: Optional[int] = None,
+        model_context_length: Optional[int] = None,
+        debug: bool = False
+    ) -> None:
+        super().__init__(maximum, input_dir=input_dir)
+        self.model_name: Optional[str] = model_name
+        self.backend_name: Optional[str] = backend_name
+        self.backend: Optional[LLMBackend] = None
+        self.model = None
+        self.output_dir: Optional[str] = output_dir
+        self.model_context_length: Optional[int] = model_context_length
+        self.debug: bool = debug
+        
+        self.prompt: Optional[str] = prompt
+        
+        # Context formatting configuration
+        from describe_media.config_loader import (
+            DEFAULT_CONTEXT_TEMPLATE,
+            DEFAULT_CONTEXT_ITEM_TEMPLATE,
+            DEFAULT_CONTEXT_ITEM_MAX_LENGTH,
+            DEFAULT_MAX_CONTEXT_IN_PROMPT,
+            DEFAULT_MAX_CONTEXT_LENGTH
+        )
+        self.context_template: str = context_template or DEFAULT_CONTEXT_TEMPLATE
+        self.context_item_template: str = context_item_template or DEFAULT_CONTEXT_ITEM_TEMPLATE
+        self.context_item_max_length: int = context_item_max_length or DEFAULT_CONTEXT_ITEM_MAX_LENGTH
+        self.max_context_in_prompt: int = max_context_in_prompt or DEFAULT_MAX_CONTEXT_IN_PROMPT
+        self.max_context_length: int = max_context_length or DEFAULT_MAX_CONTEXT_LENGTH
+    
+    def load(self) -> None:
+        """Load the model and backend. Called by worker thread at start."""
+        from describe_media.config_loader import DEFAULT_MODEL_CONTEXT_LENGTH
+        
+        self.backend = get_backend(self.backend_name)
+        if self.backend:
+            # Load with configured context window for handling context-rich prompts
+            context_size = self.model_context_length or DEFAULT_MODEL_CONTEXT_LENGTH
+            self.model = self.backend.load_model(self.model_name, allow_cli_install=False, context_size=context_size)
+        
+        if not self.model:
+            raise Exception(f"Failed to load context enhancement model: {self.model_name}")
+    
+    def unload(self) -> None:
+        """Unload the model. Called by worker thread at end."""
+        if self.backend and hasattr(self.backend, 'cleanup'):
+            self.backend.cleanup(
+                model_loaded_by_script=True,
+                model_name=self.model_name,
+                server_started_by_script=False
+            )
+        self.model = None
+        self.backend = None
+    
+    def execute(self, item: Tuple[str, str, List[str], List[str]]) -> Tuple[str, str]:
+        """
+        Enhance description using LLM with context.
+        Args: (image_path, original_description, context_descriptions, context_full_descs)
+        Returns: (image_path, enhanced_description)
+        """
+        image_path, original_desc, context_descs, context_full_descs = item
+        
+        try:
+            if not self.backend or not self.model:
+                raise Exception("Backend or model not configured")
+            
+            # Build context section using templates from config
+            context_section = ""
+            
+            if context_descs:
+                items_text = ""
+                total_context_length = 0
+                
+                # Use full descriptions (with metadata like filename) for context building
+                # Context task already returns items with closest at bottom
+                descs_to_use = context_full_descs if context_full_descs else context_descs
+                
+                for i, ctx in enumerate(descs_to_use[:self.max_context_in_prompt], 1):
+                    # Truncate context item if needed
+                    truncated = ctx[:self.context_item_max_length] + "..." if len(ctx) > self.context_item_max_length else ctx
+                    
+                    # Check if adding this item would exceed max context length
+                    item_text = self.context_item_template.format(
+                        number=i,
+                        description=truncated
+                    )
+                
+                context_section = self.context_template.format(items=items_text)
+            
+            # Format prompt with placeholders
+            try:
+                full_prompt = self.prompt.format(
+                    context_section=context_section,
+                    original_description=original_desc
+                )
+            except (KeyError, ValueError):
+                # If template has no placeholders or formatting fails, use as-is
+                full_prompt = self.prompt
+            
+            # Write debug input file BEFORE LLM call (so we see what was sent)
+            if self.debug:
+                self._write_debug_input(image_path, full_prompt)
+            
+            # Run LLM inference (text-only, no image)
+            raw_output = self.backend.respond(self.model, full_prompt)
+            
+            if not raw_output:
+                raise Exception("LLM returned empty response")
+            
+            # Write debug output file if requested (raw LLM output with <think> tags)
+            if self.debug:
+                self._write_debug_output(image_path, raw_output)
+            
+            # Clean up output: remove <think>...</think> tags and fix escaped newlines
+            enhanced_desc = self._clean_output(raw_output)
+            
+            return (image_path, enhanced_desc)
+            
+        except Exception as e:
+            # Show relative path in error
+            rel_path = image_path
+            if self.input_dir and image_path.startswith(self.input_dir):
+                try:
+                    rel_path = os.path.relpath(image_path, self.input_dir)
+                except (ValueError, TypeError):
+                    pass
+            raise Exception(f"Enhancement failed for {rel_path}: {str(e)}")    
+    def _clean_output(self, text: str) -> str:
+        """
+        Clean LLM output:
+        - Remove <think>...</think> tags (reasoning blocks)
+        """
+        import re
+        
+        # Remove <think>...</think> blocks (including multiline)
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        
+        # Clean up extra whitespace but preserve paragraph breaks
+        text = text.strip()
+        
+        return text
+    
+    def _write_debug_input(self, image_path: str, full_prompt: str) -> None:
+        """Write debug input file with the full LLM prompt that was sent."""
+        if not self.output_dir:
+            return
+        
+        try:
+            relative = os.path.relpath(image_path, self.input_dir) if self.input_dir else os.path.basename(image_path)
+            debug_file = os.path.join(self.output_dir, relative + ".enhanced.input.txt")
+            
+            # Ensure directory exists
+            debug_dir = os.path.dirname(debug_file)
+            if not os.path.exists(debug_dir):
+                os.makedirs(debug_dir, exist_ok=True)
+            
+            with open(debug_file, "w", encoding="utf-8") as f:
+                f.write(full_prompt)
+        except Exception as e:
+            # Log error but don't fail the task
+            try:
+                import sys
+                print(f"Warning: Failed to write debug input for {image_path}: {e}", file=sys.stderr)
+            except:
+                pass
+    
+    def _write_debug_output(self, image_path: str, raw_output: str) -> None:
+        """Write debug output file with raw LLM response (including <think> tags)."""
+        if not self.output_dir:
+            return
+        
+        try:
+            relative = os.path.relpath(image_path, self.input_dir) if self.input_dir else os.path.basename(image_path)
+            debug_file = os.path.join(self.output_dir, relative + ".enhanced.output.txt")
+            
+            # Ensure directory exists
+            debug_dir = os.path.dirname(debug_file)
+            if not os.path.exists(debug_dir):
+                os.makedirs(debug_dir, exist_ok=True)
+            
+            with open(debug_file, "w", encoding="utf-8") as f:
+                if raw_output:
+                    f.write(raw_output)
+                else:
+                    f.write("(empty response)")
+        except Exception as e:
+            # Log error but don't fail the task
+            try:
+                import sys
+                print(f"Warning: Failed to write debug output for {image_path}: {e}", file=sys.stderr)
+            except:
+                pass
